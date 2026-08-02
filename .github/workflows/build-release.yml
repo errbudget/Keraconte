@@ -56,8 +56,11 @@ jobs:
           if [ "${{ startsWith(github.ref, 'refs/tags/v') }}" = "true" ]; then
             echo "suffixe=" >> "$GITHUB_OUTPUT"
           else
+            # La barre oblique de « dev/x » devient un tiret. Pas de « -dev- »
+            # ajouté : le nom de branche le porte déjà, et le premier build
+            # sortait « keraconte-Windows-dev-dev-detection-... ».
             branche="${GITHUB_REF_NAME//\//-}"
-            echo "suffixe=-dev-${branche}-$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+            echo "suffixe=-${branche}-$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
           fi
 
       - uses: actions/setup-python@v5
@@ -201,3 +204,67 @@ jobs:
           files: |
             keraconte-*.tar.gz
             keraconte-*.zip
+
+  # Annonce les exécutables dans la PR ouverte sur la branche.
+  #
+  # Un artefact GitHub ne s'atteint que par la page du run : sans ce lien, il
+  # faut ouvrir l'onglet Actions et retrouver le bon build à la main. Le
+  # commentaire est mis à jour en place à chaque poussée (« edit-mode:
+  # replace ») plutôt qu'empilé, pour que la PR ne se remplisse pas d'annonces
+  # périmées pointant vers des artefacts déjà expirés.
+  #
+  # Job séparé, et non une étape du build : la matrice tourne deux fois
+  # (Windows et Linux), ce qui posterait deux commentaires concurrents.
+  # « needs: build » attend en outre que les DEUX exécutables existent.
+  annoncer:
+    name: annoncer l'exe dans la PR
+    needs: build
+    # Jamais sur un tag : une release a sa page, elle n'a pas de PR.
+    if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+    steps:
+      - name: Trouver la PR de la branche
+        id: pr
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          numero=$(gh pr list --repo "$GITHUB_REPOSITORY" \
+            --head "$GITHUB_REF_NAME" --state open \
+            --json number --jq '.[0].number // empty')
+          echo "numero=$numero" >> "$GITHUB_OUTPUT"
+
+      # Retrouve l'annonce précédente pour la remplacer plutôt qu'en empiler
+      # une nouvelle. Le repère est le titre du commentaire, invariant d'un
+      # build à l'autre ; l'auteur « github-actions[bot] » évite de toucher
+      # à un commentaire humain qui contiendrait la même phrase.
+      - name: Retrouver l'annonce précédente
+        id: trouver
+        uses: peter-evans/find-comment@v3
+        if: steps.pr.outputs.numero != ''
+        with:
+          issue-number: ${{ steps.pr.outputs.numero }}
+          comment-author: "github-actions[bot]"
+          body-includes: "Exécutables de test"
+
+      - name: Commenter la PR
+        if: steps.pr.outputs.numero != ''
+        uses: peter-evans/create-or-update-comment@v4
+        with:
+          issue-number: ${{ steps.pr.outputs.numero }}
+          comment-id: ${{ steps.trouver.outputs.comment-id }}
+          edit-mode: replace
+          body: |
+            ### Exécutables de test — `${{ github.sha }}`
+
+            [**Télécharger depuis la page du run**](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}#artifacts)
+
+            | plateforme | artefact |
+            |---|---|
+            | Windows | `keraconte-Windows-${{ github.ref_name }}` |
+            | Linux | `keraconte-Linux-${{ github.ref_name }}` |
+
+            Build de dev : aucune Release n'est publiée, et les artefacts
+            expirent au bout de 14 jours. L'exe Linux suppose
+            gi/GStreamer/PipeWire installés ; celui de Windows est autonome.
