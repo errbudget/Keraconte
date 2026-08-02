@@ -7,6 +7,7 @@ import os
 import re
 import shutil
 import sys
+import tempfile
 import time
 
 import cv2
@@ -151,6 +152,12 @@ MIN_PUNCTUATION_RATIO = 0.08
 # (721/765 px) la rendent risquée. Calibrée sur 2560×1350 (largeur mini 300 px).
 MIN_AREA = 40000
 MIN_WIDTH_RATIO = 300 / 2560
+# Hauteur minimale d'un blob écarté au bord droit pour qu'il vaille la peine
+# d'être vidé sur disque (diagnostic QR_DEBUG seul, aucun effet sur la lecture).
+# Une bulle mesure 150 à 660 px de haut sur les registres, soit 0,10 à 0,46 de
+# la hauteur d'image : sous 0,10, le blob est un bandeau qui ne peut pas en
+# cacher une. En fraction, jamais en pixels d'une résolution donnée.
+MIN_BLOB_HEIGHT_RATIO = 0.10
 # Plancher de longueur du texte lu. Deux valeurs selon la preuve accumulée :
 # sans réponses appariées, le bloc n'est admis que sur sa hauteur ou sa
 # ponctuation, et ce plancher écarte le bruit OCR d'un panneau (fragments
@@ -277,6 +284,52 @@ def bubble_mask(frame):
     return cv2.morphologyEx(mask, cv2.MORPH_OPEN, OPEN_KERNEL)
 
 
+def _vider_image(frame, blob):
+    """Sauve une image écartée au bord droit, pour l'analyser hors ligne.
+
+    Le défaut ne se reproduit pas sur les captures d'écran fournies à la main :
+    celles-ci contiennent la barre de titre de la fenêtre (2710 px de large)
+    là où le portail livre le contenu seul (2560 px, ce que dit la trace :
+    « width*0.99 = 2534 »). Trois correctifs ont été conçus contre une image
+    qui PASSE, donc validés sur la mauvaise entrée. Ce vidage donne l'image
+    exactement telle que « find_bubbles » l'a vue.
+
+    Piège vu au premier essai, qui a ramené une image SANS dialogue : le rejet
+    au bord droit se produit à CHAQUE image, dialogue ou non — le décor et
+    l'interface latérale y touchent en permanence. Garder « la première »
+    revenait à garder l'image de démarrage.
+
+    On garde donc un ROULEMENT des dernières images retenues, plutôt qu'une
+    seule : le diagnostic ne dépend plus de l'instant exact où l'on quitte.
+    Un premier filtre écarte les blobs trop PLATS pour cacher une bulle
+    (bandeaux, liserés d'interface), en fraction de la hauteur d'image et
+    jamais en pixels d'une résolution donnée.
+    """
+    if not os.environ.get("QR_DEBUG"):
+        return
+    height = frame.shape[0]
+    _y, _x, _w, h = blob
+    if h < height * MIN_BLOB_HEIGHT_RATIO:
+        return
+    global _VIDAGES
+    chemin = os.path.join(
+        tempfile.gettempdir(), f"keraconte-bord-droit-{_VIDAGES % NB_VIDAGES}.png"
+    )
+    _VIDAGES += 1
+    try:
+        cv2.imwrite(chemin, frame)
+        _trace(f"  >>> image écartée sauvée (blob h={h}) : {chemin}")
+    except Exception as erreur:  # jamais laisser un diagnostic casser la lecture
+        _trace(f"  >>> vidage impossible : {erreur}")
+
+
+# Combien d'images écartées on garde en roulement (diagnostic QR_DEBUG seul).
+# Huit couvre deux secondes à --fps 4 : assez pour que le dialogue visé y
+# figure quel que soit l'instant du Ctrl+C, sans remplir le disque.
+NB_VIDAGES = 8
+_VIDAGES = 0
+
+
 def find_bubbles(frame):
     """Repère les blocs qui ont l'aspect d'une bulle, sans lire leur texte.
 
@@ -289,7 +342,8 @@ def find_bubbles(frame):
     # La fermeture soude les lignes d'un même bloc ; c'est elle aussi qui,
     # quand bulle et réponses se touchent, les fond en un seul contour.
     # « splits_into_pair » repart du masque d'avant pour les distinguer.
-    mask = cv2.morphologyEx(bubble_mask(frame), cv2.MORPH_CLOSE, CLOSE_KERNEL)
+    brut = bubble_mask(frame)
+    mask = cv2.morphologyEx(brut, cv2.MORPH_CLOSE, CLOSE_KERNEL)
 
     contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     # L'aire mini est absolue (une bulle ne grandit pas avec l'aire de
@@ -304,19 +358,55 @@ def find_bubbles(frame):
         # L'interface de droite touche le bord ; le reste (chat compris)
         # est écarté par l'exigence d'un bloc de réponses apparié.
         if x + w > width * 0.99:
-            # Trace (silencieuse hors QR_DEBUG) : un blob assez grand écarté par
-            # le bord droit peut être une bulle SOUDÉE au décor jusqu'au bord —
-            # elle disparaît alors sans laisser de box, et le lecteur ne voit
-            # « rien » sans savoir pourquoi. Sert à mesurer ce cas en jeu.
             _trace(
                 f"  contour ÉCARTÉ=bord-droit (y={y} x={x} w={w} h={h}) "
                 f"x+w={x + w} > {width * 0.99:.0f}"
             )
+            _vider_image(frame, (y, x, w, h))
+            # Écarter le blob ENTIER perdait la bulle qu'il pouvait contenir.
+            # Mesuré en jeu (Affreudite, forge de Brâkmar) : le décor gris de
+            # la carte entre dans le masque comme un fond de bulle, la
+            # fermeture soude tout jusqu'au bord, et un contour de 2560×773
+            # avalait la bulle à 100 % — d'où « ocr=0ms », l'OCR n'était même
+            # pas appelé et le dialogue n'était JAMAIS lu.
+            boxes.extend(_resegmenter(brut, (y, x, w, h), width, min_area, min_width))
             continue
         boxes.append((y, x, w, h))
 
     boxes.sort()
     return boxes, height
+
+
+def _resegmenter(brut, blob, width, min_area, min_width):
+    """Cherche des bulles DANS un blob écarté au bord droit.
+
+    Même mécanique que « splits_into_pair » : on repart du masque d'AVANT
+    fermeture, restreint au blob. Sans la fermeture qui les soudait, la bulle
+    et le décor redeviennent des contours distincts, et les critères habituels
+    s'appliquent à chacun — aucun seuil nouveau, aucun cas particulier.
+
+    Les trois filtres sont ceux de « find_bubbles », y compris le bord droit :
+    une sous-partie qui touche ELLE-MÊME le bord reste écartée. C'est ce qui
+    garde dehors le panneau d'interface latéral, présent à chaque image.
+
+    Ne rend donc la parole qu'aux blocs qui auraient été admis si le décor ne
+    les avait pas soudés au bord ; la preuve d'appariement, elle, reste due.
+    """
+    y, x, w, h = blob
+    contours, _ = cv2.findContours(
+        brut[y : y + h, x : x + w], cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
+    )
+    parts = []
+    for contour in contours:
+        cx, cy, cw, ch = cv2.boundingRect(contour)
+        if cw * ch < min_area or cw < min_width:
+            continue
+        if (x + cx) + cw > width * 0.99:
+            continue
+        parts.append((y + cy, x + cx, cw, ch))
+    if parts:
+        _trace(f"  blob ré-segmenté : {len(parts)} bloc(s) récupéré(s) {sorted(parts)}")
+    return parts
 
 
 def splits_into_pair(frame, box):
