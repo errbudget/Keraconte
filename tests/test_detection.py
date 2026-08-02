@@ -30,6 +30,7 @@ from tests.helpers import (  # noqa: E402
     BWORKNROLL,
     CLIQUETIS,
     ENROLEMENT,
+    AFREUDITE_JEU,
     EXPLORANCIENNE_100,
     FIXTURES,
     HAZEL,
@@ -453,6 +454,25 @@ def test_garde_l_exclamation_finale():
 def test_la_ponctuation_forte_survit_au_filtre(signe):
     """Elle porte l'intonation : c'est l'objet même de la lecture."""
     assert keep_word(signe, 90) is True
+
+
+@pytest.mark.ocr_fixture
+def test_lit_une_bulle_soudee_au_decor_jusqu_au_bord():
+    """Un décor de même teinte que la bulle ne doit pas rendre le PNJ muet.
+
+    Relevé en jeu chez Affreudite (forge de Brâkmar) : le dialogue n'était
+    JAMAIS lu — pas coupé, pas amputé, muet. Le métal gris de la carte entre
+    dans le masque comme un fond de bulle, la fermeture soude tout jusqu'au
+    bord droit, et le contour géant qui en résulte était écarté EN BLOC avec
+    la bulle dedans. Aucune box ne sortait, l'OCR n'était pas appelé.
+
+    Le blob écarté est désormais re-segmenté sur le masque d'avant fermeture,
+    comme « splits_into_pair » le fait pour une bulle soudée à ses réponses :
+    la bulle redevient un contour propre et l'appariement s'applique. Le bord
+    droit reste éliminatoire pour toute sous-partie qui y touche elle-même —
+    c'est ce qui garde dehors le panneau d'interface latéral.
+    """
+    assert clean(find_dialog(load(AFREUDITE_JEU))) == AFREUDITE_JEU["expected"]
 
 
 @pytest.mark.ocr_fixture

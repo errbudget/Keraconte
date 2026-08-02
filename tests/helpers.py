@@ -194,6 +194,24 @@ ROUKEROL = {
     "dangereux.",
 }
 
+# Relevé en jeu chez Affreudite, forge de Brâkmar — et vidé par « QR_DEBUG »
+# depuis le flux LUI-MÊME, pas fourni à la main. C'est ce qui fait sa valeur :
+# les captures manuelles font 2710 px (barre de titre comprise) et PASSENT,
+# quand le portail livre 2560 px où le défaut se produit. Trois correctifs ont
+# été conçus contre une image qui passait, donc validés sur la mauvaise entrée.
+#
+# Ici le décor gris de la forge entre dans le masque comme un fond de bulle :
+# la fermeture soude tout jusqu'au bord droit et un contour de 2560×773 avale
+# la bulle à 100 %. Écarté en bloc, il ne restait AUCUNE box — d'où « ocr=0ms »
+# dans la trace, l'OCR n'était pas même appelé et le dialogue jamais lu.
+AFREUDITE_JEU = {
+    "file": "dialogues/dialogue_afreudite_jeu.png",
+    "expected": "Je ne trouve pas de bijou digne de ma beauté. Ici, il y a "
+    "plein de pierres précieuses arrachées aux entrailles de la terre, mais "
+    "moi ce qui me plairait, ce serait un bijou en nacre serti de perles "
+    "parfaites.",
+}
+
 
 # Dialogue très court, apparié à ses réponses. « expected » reprend ce que
 # l'OCR rend vraiment (« toâ » ressort « toû. »), non le texte à l'écran.
