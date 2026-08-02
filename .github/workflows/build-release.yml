@@ -256,14 +256,12 @@ jobs:
           comment-id: ${{ steps.trouver.outputs.comment-id }}
           edit-mode: replace
           body: |
-            ### Exécutables de test — `${{ github.sha }}`
+            ### Exécutables de test
+
+            Branche `${{ github.ref_name }}`, commit `${{ github.sha }}`.
 
             [**Télécharger depuis la page du run**](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}#artifacts)
-
-            | plateforme | artefact |
-            |---|---|
-            | Windows | `keraconte-Windows-${{ github.ref_name }}` |
-            | Linux | `keraconte-Linux-${{ github.ref_name }}` |
+            — une archive Windows et une archive Linux y sont attachées.
 
             Build de dev : aucune Release n'est publiée, et les artefacts
             expirent au bout de 14 jours. L'exe Linux suppose
