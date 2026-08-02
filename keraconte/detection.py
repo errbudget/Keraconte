@@ -420,8 +420,24 @@ def _resegmenter(brut, blob, width, min_area, min_width):
 
     Ne rend donc la parole qu'aux blocs qui auraient été admis si le décor ne
     les avait pas soudés au bord ; la preuve d'appariement, elle, reste due.
+
+    On ne re-segmente QUE les blobs qui traversent l'écran de bord à bord.
+    C'est ce qui distingue un décor soudé d'un panneau d'interface, et la
+    distinction est nette sur les captures du flux :
+
+        Affreudite  (y=667 x=0    w=2560)  x=0 → 2560, TOUTE la largeur
+        hôtel de vente (y=294 x=841 w=1719)  x=841 → 2560, ancré à droite
+
+    Un panneau ne part jamais du bord gauche ; un décor soudé, si. Sans cette
+    garde, le panneau de l'hôtel de vente était découpé en ses composants et
+    son bandeau « ACHAT VENTE » formait une fausse paire avec le corps du
+    panneau juste dessous — l'application lisait l'interface (relevé en jeu).
+    Le seuil est celui de la règle du bord droit, simplement mirroité : aucune
+    constante nouvelle.
     """
     y, x, w, h = blob
+    if x >= width * 0.01:
+        return []
     contours, _ = cv2.findContours(
         brut[y : y + h, x : x + w], cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
     )

@@ -34,6 +34,7 @@ from tests.helpers import (  # noqa: E402
     EXPLORANCIENNE_100,
     FIXTURES,
     HAZEL,
+    HDV_OVERLAY_JEU,
     HERCULE,
     HERCULE_PERMUTE,
     IDS,
@@ -473,6 +474,27 @@ def test_lit_une_bulle_soudee_au_decor_jusqu_au_bord():
     c'est ce qui garde dehors le panneau d'interface latéral.
     """
     assert clean(find_dialog(load(AFREUDITE_JEU))) == AFREUDITE_JEU["expected"]
+
+
+@pytest.mark.ocr_fixture
+def test_un_panneau_d_interface_ancre_a_droite_reste_muet():
+    """Le pendant du cas précédent : re-segmenter ne doit pas ouvrir l'interface.
+
+    Relevé en jeu juste après le correctif ci-dessus : l'application disait
+    « ACHAT VENTE » à l'ouverture de l'hôtel de vente. Le panneau forme un
+    blob touchant le bord droit, donc écarté — mais la re-segmentation le
+    découpait en ses composants, et son bandeau d'onglets faisait une paire
+    parfaitement crédible avec le corps du panneau juste dessous.
+
+    Ce qui sépare les deux cas est dans la géométrie du blob : un décor soudé
+    traverse l'écran de bord à bord (x=0), un panneau reste ancré à droite
+    (ici x=841). On ne re-segmente donc que les blobs partant du bord gauche.
+
+    Les interfaces du jeu étant DÉPLAÇABLES, le cas « panneau collé à gauche »
+    a été vérifié à part, y compris relié au bord droit : muet dans les deux
+    formes, la preuve d'appariement suffisant alors à l'écarter.
+    """
+    assert find_dialog(load(HDV_OVERLAY_JEU)) is None
 
 
 @pytest.mark.ocr_fixture

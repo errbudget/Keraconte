@@ -204,6 +204,19 @@ ROUKEROL = {
 # la fermeture soude tout jusqu'au bord droit et un contour de 2560×773 avale
 # la bulle à 100 %. Écarté en bloc, il ne restait AUCUNE box — d'où « ocr=0ms »
 # dans la trace, l'OCR n'était pas même appelé et le dialogue jamais lu.
+# Le PENDANT du cas Affreudite, vidé du même flux et dans les mêmes
+# dimensions (2560 plein écran) : celui-là ne doit surtout PAS être lu.
+#
+# Relevé en jeu : l'application disait « ACHAT VENTE » à l'ouverture de
+# l'hôtel de vente. Le panneau entier forme un blob qui touche le bord droit,
+# donc écarté — jusqu'à ce que la re-segmentation d'AFREUDITE_JEU le découpe
+# en ses composants, où le bandeau d'onglets et le corps du panneau juste
+# dessous formaient une paire parfaitement crédible.
+#
+# La paire des deux fixtures est le vrai garde-fou : un même mécanisme doit
+# rendre l'une lisible et laisser l'autre muette.
+HDV_OVERLAY_JEU = {"file": "hud/hdv_overlay_item_jeu.png"}
+
 AFREUDITE_JEU = {
     "file": "dialogues/dialogue_afreudite_jeu.png",
     "expected": "Je ne trouve pas de bijou digne de ma beauté. Ici, il y a "
