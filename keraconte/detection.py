@@ -358,6 +358,13 @@ NB_VIDAGES = 8
 _VIDAGES = 0
 _LUS = 0
 
+# Les blocs tirés d'un blob écarté au bord droit, pour l'image en cours.
+# Ils sont admis plus largement que les autres — le blob qui les contenait,
+# lui, était rejeté — et doivent donc prouver davantage : voir la garde de
+# hauteur dans « find_dialog_box ». Rempli par « find_bubbles », vidé à
+# chaque image ; « find_dialog_box » le consulte pour la même image.
+_RECUPEREES = set()
+
 
 def find_bubbles(frame):
     """Repère les blocs qui ont l'aspect d'une bulle, sans lire leur texte.
@@ -375,6 +382,8 @@ def find_bubbles(frame):
     mask = cv2.morphologyEx(brut, cv2.MORPH_CLOSE, CLOSE_KERNEL)
 
     contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    # Remis à zéro à chaque image : ne marque que la segmentation courante.
+    _RECUPEREES.clear()
     # L'aire mini est absolue (une bulle ne grandit pas avec l'aire de
     # l'écran, cf. MIN_AREA) ; la largeur mini suit la largeur de l'image.
     min_area = MIN_AREA
@@ -398,7 +407,10 @@ def find_bubbles(frame):
             # fermeture soude tout jusqu'au bord, et un contour de 2560×773
             # avalait la bulle à 100 % — d'où « ocr=0ms », l'OCR n'était même
             # pas appelé et le dialogue n'était JAMAIS lu.
-            boxes.extend(_resegmenter(brut, (y, x, w, h), width, min_area, min_width))
+            recuperees = _resegmenter(brut, (y, x, w, h), width, min_area, min_width)
+            # Ces blocs-là devront prouver davantage : voir « _RECUPEREES ».
+            _RECUPEREES.update(recuperees)
+            boxes.extend(recuperees)
             continue
         boxes.append((y, x, w, h))
 
@@ -421,23 +433,18 @@ def _resegmenter(brut, blob, width, min_area, min_width):
     Ne rend donc la parole qu'aux blocs qui auraient été admis si le décor ne
     les avait pas soudés au bord ; la preuve d'appariement, elle, reste due.
 
-    On ne re-segmente QUE les blobs qui traversent l'écran de bord à bord.
-    C'est ce qui distingue un décor soudé d'un panneau d'interface, et la
-    distinction est nette sur les captures du flux :
+    La géométrie du blob ne sépare RIEN, contrairement à ce qu'on a d'abord
+    cru — mesuré sur une trace de 170 images en jeu : le blob part de x=0 ou
+    de x=842 selon ce que le décor soude à l'instant, et x=842 est exactement
+    la position du blob de l'hôtel de vente. Une garde sur x refusait 63 %
+    des images où la bulle était pourtant récupérable, d'où les minutes
+    d'attente signalées. L'aire relative ne sépare pas davantage : le bandeau
+    fautif fait 4,4 % de son blob quand la vraie bulle en fait 5,5 %.
 
-        Affreudite  (y=667 x=0    w=2560)  x=0 → 2560, TOUTE la largeur
-        hôtel de vente (y=294 x=841 w=1719)  x=841 → 2560, ancré à droite
-
-    Un panneau ne part jamais du bord gauche ; un décor soudé, si. Sans cette
-    garde, le panneau de l'hôtel de vente était découpé en ses composants et
-    son bandeau « ACHAT VENTE » formait une fausse paire avec le corps du
-    panneau juste dessous — l'application lisait l'interface (relevé en jeu).
-    Le seuil est celui de la règle du bord droit, simplement mirroité : aucune
-    constante nouvelle.
+    Ce qui sépare est la RÉPONSE que chaque bloc se trouve — voir la garde de
+    hauteur dans « find_dialog_box », qui s'applique aux blocs venus d'ici.
     """
     y, x, w, h = blob
-    if x >= width * 0.01:
-        return []
     contours, _ = cv2.findContours(
         brut[y : y + h, x : x + w], cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
     )
@@ -661,6 +668,26 @@ def find_dialog_box(frame, boxes=None):
                 # instantané ne montre pas la variance de la fusion morphologique.
                 _trace(f"  box (y={y} x={x} w={w} h={h}) PORTE=pas-de-preuve")
                 continue
+        # Un bloc tiré d'un blob écarté au bord droit doit prouver davantage :
+        # sa réponse ne doit pas être PLUS HAUTE que lui. C'est l'invariant
+        # déjà posé par « splits_into_pair » — un vrai bloc de réponses (1 à 4
+        # options) est toujours plus court que la bulle qu'il suit, tandis que
+        # la « réponse » d'un panneau est sa liste entière.
+        #
+        # Il ne s'applique qu'ICI, aux blocs récupérés : eux seuls entrent par
+        # une porte que leur blob parent avait fermée. Les blocs trouvés
+        # normalement gardent le comportement d'avant, inchangé.
+        #
+        # Mesuré sur les deux captures du flux : bulle d'Affreudite h=150 pour
+        # une réponse h=72 (0,48), bandeau « ACHAT VENTE » h=106 pour une
+        # « réponse » h=155 (1,46). Le premier passe, le second est écarté —
+        # c'est ce faux positif qui faisait lire l'hôtel de vente en jeu.
+        if replies is not None and (y, x, w, h) in _RECUPEREES and replies[3] > h:
+            _trace(
+                f"  box (y={y} x={x} w={w} h={h}) PORTE=réponse-trop-haute "
+                f"reply_h={replies[3]} > {h}"
+            )
+            continue
         region = frame[y : y + h, x : x + w]
         white = (region > 200).all(2).mean()
         if not MIN_WHITE_RATIO <= white <= MAX_WHITE_RATIO:
