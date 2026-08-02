@@ -323,11 +323,40 @@ def _vider_image(frame, blob):
         _trace(f"  >>> vidage impossible : {erreur}")
 
 
+def _vider_lu(frame, texte):
+    """Sauve l'image d'un texte ADMIS, pour instruire un faux positif.
+
+    Pendant du vidage des blobs écartés, à l'autre bout de la porte : quand
+    l'application lit ce qu'elle ne devrait pas (un panneau d'interface), il
+    faut l'image telle que la détection l'a vue, avec le texte qu'elle en a
+    tiré. Les captures d'écran fournies à la main ne suffisent pas — cadrage
+    et dimensions diffèrent du flux, et c'est ce qui a masqué le défaut
+    Affreudite pendant trois correctifs.
+
+    Roulement comme pour les blobs : l'instant du Ctrl+C n'importe pas. Le
+    texte accompagne l'image dans un « .txt » voisin, pour retrouver LEQUEL
+    des faux positifs on tient sans avoir à relire l'OCR.
+    """
+    if not os.environ.get("QR_DEBUG"):
+        return
+    global _LUS
+    base = os.path.join(tempfile.gettempdir(), f"keraconte-lu-{_LUS % NB_VIDAGES}")
+    _LUS += 1
+    try:
+        cv2.imwrite(f"{base}.png", frame)
+        with open(f"{base}.txt", "w", encoding="utf-8") as fichier:
+            fichier.write(texte)
+        _trace(f"  >>> image lue sauvée : {base}.png")
+    except Exception as erreur:  # jamais laisser un diagnostic casser la lecture
+        _trace(f"  >>> vidage impossible : {erreur}")
+
+
 # Combien d'images écartées on garde en roulement (diagnostic QR_DEBUG seul).
 # Huit couvre deux secondes à --fps 4 : assez pour que le dialogue visé y
 # figure quel que soit l'instant du Ctrl+C, sans remplir le disque.
 NB_VIDAGES = 8
 _VIDAGES = 0
+_LUS = 0
 
 
 def find_bubbles(frame):
@@ -684,6 +713,7 @@ def find_dialog_box(frame, boxes=None):
                 f"| box=(y={y} x={x} w={w} h={h}) paired={paired} "
                 f"origine={_origine} reply={replies}"
             )
+            _vider_lu(frame, text)
             return text, (y, x, w, h)
         _trace(
             f"  box (y={y} x={x} w={w} h={h}) PORTE=floor "
