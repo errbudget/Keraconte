@@ -35,6 +35,7 @@ from tests.helpers import (  # noqa: E402
     FIXTURES,
     HAZEL,
     HDV_OVERLAY_JEU,
+    HUD_BARRE_SORTS_BRUIT,
     HUD_BARRE_SORTS_JEU,
     HERCULE,
     HERCULE_PERMUTE,
@@ -520,6 +521,24 @@ def test_la_barre_de_sorts_du_jeu_reste_muette():
     mots.
     """
     assert find_dialog(load(HUD_BARRE_SORTS_JEU)) is None
+
+
+@pytest.mark.ocr_fixture
+def test_la_barre_de_sorts_reste_muette_meme_lue_en_lettres():
+    """La même barre, dont l'OCR sort cette fois en lettres presque propres.
+
+    Relevé sur une autre carte après le correctif alphabétique : « CPETEUSAUw…e
+    ». Le bruit varie d'une image à l'autre — tantôt des signes (part
+    alphabétique 0,43), tantôt des lettres (0,85) — si bien qu'aucun seuil sur
+    la NATURE des caractères ne peut tenir : à 0,85 ce bloc est plus lisible
+    que CLIQUETIS (0,82), qui est un vrai dialogue.
+
+    Ce qui ne varie pas, c'est la structure. L'OCR d'une grille d'icônes rend
+    un unique agglomérat qui accapare 85 à 92 % du texte, quand un dialogue
+    répartit sur des mots — le plus déséquilibré du registre (CLIQUETIS, quatre
+    onomatopées) plafonne à 0,41.
+    """
+    assert find_dialog(load(HUD_BARRE_SORTS_BRUIT)) is None
 
 
 @pytest.mark.ocr_fixture

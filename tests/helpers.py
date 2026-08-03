@@ -232,6 +232,18 @@ HDV_OVERLAY_JEU = {"file": "hud/hdv_overlay_item_jeu.png"}
 # plus bruité du registre (CLIQUETIS, que des onomatopées) tient 0,82.
 HUD_BARRE_SORTS_JEU = {"file": "dialogues/interface_barre_sorts_jeu.png"}
 
+# La MÊME barre de sorts, relevée sur une autre carte (décor bleu) après le
+# correctif alphabétique : « CPETEUSAUw…e ». Le bruit d'OCR varie d'une image
+# à l'autre — tantôt des signes (« È©£@@@@ », part alphabétique 0,43), tantôt
+# des lettres presque propres (0,85). Le seuil alphabétique ne peut donc pas
+# le prendre : à 0,85 ce bloc est plus « lisible » que CLIQUETIS (0,82), un
+# vrai dialogue.
+#
+# Ce qui ne varie PAS, c'est la structure : un unique agglomérat qui accapare
+# 85 à 92 % du texte lu, là où le dialogue le plus déséquilibré du registre
+# (CLIQUETIS, quatre onomatopées) plafonne à 0,41.
+HUD_BARRE_SORTS_BRUIT = {"file": "dialogues/interface_barre_sorts_bruit.png"}
+
 AFREUDITE_JEU = {
     "file": "dialogues/dialogue_afreudite_jeu.png",
     "expected": "Je ne trouve pas de bijou digne de ma beauté. Ici, il y a "

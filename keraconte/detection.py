@@ -189,6 +189,27 @@ MIN_CHARS_PAIRED = 6
 # le décompte de mots, pas la proportion de lettres dans ce qu'elle a lu.
 MIN_ALPHA_RATIO = 0.66
 
+# Part maximale du texte lu qu'un seul « mot » peut accaparer.
+#
+# Le seuil alphabétique ci-dessus n'attrape qu'une des deux formes du bruit
+# d'icônes. Relevé sur une autre carte, la MÊME barre de sorts sort en
+# « CPETEUSAUw…e » : 0,85 de caractères alphabétiques, soit plus « lisible »
+# que CLIQUETIS (0,82), un vrai dialogue. Aucun seuil sur la NATURE des
+# caractères ne peut donc trancher — le bruit varie d'une image à l'autre.
+#
+# Ce qui ne varie pas est la STRUCTURE : l'OCR d'une grille d'icônes agglomère
+# tout en un unique fragment, quand un dialogue répartit sur des mots. Mesuré
+# sur le registre et trois vidages du flux : faux positifs 0,85 à 0,92,
+# dialogues 0,04 à 0,41 — le maximum étant CLIQUETIS, quatre onomatopées dont
+# une de 30 lettres. Plancher posé à mi-chemin.
+#
+# Ce critère est le plus robuste des trois testés ici : il ne dépend ni de la
+# nature des caractères (qui varie avec le bruit), ni du décompte de mots (qui
+# varie avec la build de Tesseract), mais du rapport entre le plus long
+# fragment et l'ensemble — stable tant que l'OCR sépare les mots par des
+# espaces.
+MAX_WORD_DOMINANCE = 0.60
+
 # Le texte de dialogue est blanc sur gris. Mesuré : 2.9 % dans une vraie
 # bulle contre 0.1 % pour un bloc d'interface sans texte.
 MIN_WHITE_RATIO = 0.008
@@ -851,18 +872,33 @@ def reads_like_words(words):
     en sort une paire crédible (barre de sorts + barre d'XP dessous) dont le
     texte n'a pourtant rien de lisible.
 
-    On mesure sur les caractères et non sur les mots : le découpage en mots
-    varie d'une build de Tesseract à l'autre, la proportion de lettres dans
-    ce qui a été lu, non — c'est ce qui rend ce seuil transportable là où
-    celui de « reads_like_dialogue » ne l'est pas.
+    Deux formes du même bruit, relevées toutes deux en jeu sur la barre de
+    sorts, et il faut les deux tests :
+
+    - des SIGNES (« EUSAUVS È©£@@@@@Që@@@ä@,V ») : la part de caractères
+      alphabétiques tombe à 0,43 quand un dialogue tient 0,82 au pire ;
+    - des LETTRES (« CPETEUSAUw…e ») : la part alphabétique remonte à 0,85 —
+      au-dessus de CLIQUETIS, un vrai dialogue — mais tout le texte tient en
+      un seul fragment, quand un dialogue le répartit sur des mots.
+
+    Aucun des deux ne compte les mots : leur découpage varie d'une build de
+    Tesseract à l'autre, ce qui rend intransportable le seuil de
+    « reads_like_dialogue ». On mesure des longueurs de caractères, stables.
     """
     if not words:
         return False
-    texte = "".join(word["text"] for word in words)
-    if not texte:
+    longueurs = [len(word["text"]) for word in words]
+    total = sum(longueurs)
+    if not total:
         return False
+    texte = "".join(word["text"] for word in words)
     lettres = sum(1 for caractere in texte if caractere.isalpha())
-    return lettres / len(texte) >= MIN_ALPHA_RATIO
+    if lettres / total < MIN_ALPHA_RATIO:
+        return False
+    # Deuxième forme du même bruit : quand l'OCR rend les icônes en lettres
+    # plutôt qu'en signes, la part alphabétique ne trahit plus rien, mais
+    # l'agglomérat reste — un seul fragment pour presque tout le texte.
+    return max(longueurs) / total <= MAX_WORD_DOMINANCE
 
 
 def read_words(data):
