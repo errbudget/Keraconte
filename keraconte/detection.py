@@ -169,6 +169,26 @@ MIN_BLOB_HEIGHT_RATIO = 0.10
 MIN_CHARS = 20
 MIN_CHARS_PAIRED = 6
 
+# Part minimale de caractères alphabétiques dans le texte retenu.
+#
+# Une grille d'icônes OCRisée ne rend pas des mots mais des agglomérats de
+# signes : la barre de sorts du jeu sort en « EUSAUVS È©£@@@@@Që@@@ä@,V ».
+# Aucune garde géométrique ne l'écarte — appariée à la barre d'XP juste
+# dessous, elle présente un ratio de hauteur de 0,79, en plein dans la plage
+# des vrais dialogues — et le « , » du mojibake lui suffit à passer le ratio
+# de ponctuation.
+#
+# Mesuré sur les 31 blocs lus du registre : les vrais dialogues tiennent 0,82
+# à 0,98, le HUD tombe à 0,43-0,50 sur cinq vidages consécutifs. Le plancher
+# est posé à mi-chemin. Le pire cas admis est CLIQUETIS (0,82), qui n'est
+# QUE des onomatopées entre astérisques — un dialogue plus alphabétique que
+# lui n'existe pas dans le jeu.
+#
+# Contrairement au ratio de ponctuation, ce critère ne compte pas les mots
+# mais les caractères : une build de Tesseract qui découpe autrement déplace
+# le décompte de mots, pas la proportion de lettres dans ce qu'elle a lu.
+MIN_ALPHA_RATIO = 0.66
+
 # Le texte de dialogue est blanc sur gris. Mesuré : 2.9 % dans une vraie
 # bulle contre 0.1 % pour un bloc d'interface sans texte.
 MIN_WHITE_RATIO = 0.008
@@ -748,6 +768,18 @@ def find_dialog_box(frame, boxes=None):
                 f"mots={len(words)} paired={paired}"
             )
             continue
+        # Le test de ponctuation ci-dessus ne s'applique qu'aux blocs SANS
+        # preuve. Or une grille d'icônes en produit une : la barre de sorts
+        # s'apparie à la barre d'XP juste dessous, avec une géométrie de vrai
+        # dialogue. Ce qui la trahit est le texte lui-même — des signes, pas
+        # des lettres. Le seuil porte sur les caractères, donc il vaut pour
+        # les deux chemins, apparié ou non.
+        if not reads_like_words(words):
+            _trace(
+                f"  box (y={y} x={x} w={w} h={h}) PORTE=alpha "
+                f"mots={len(words)} paired={paired}"
+            )
+            continue
         text = clean(" ".join(word["text"] for word in words))
         floor = MIN_CHARS_PAIRED if paired else MIN_CHARS
         if len(text) >= floor:
@@ -809,6 +841,28 @@ def reads_like_dialogue(words):
         1 for word in words if any(sign in word["text"] for sign in ".,!?…")
     )
     return ponctues / len(words) >= MIN_PUNCTUATION_RATIO
+
+
+def reads_like_words(words):
+    """Ce que l'OCR a lu est-il fait de lettres, ou de signes agglomérés ?
+
+    Le pendant de « reads_like_dialogue » pour les blocs APPARIÉS, que la
+    preuve relationnelle dispense du test de ponctuation. Une grille d'icônes
+    en sort une paire crédible (barre de sorts + barre d'XP dessous) dont le
+    texte n'a pourtant rien de lisible.
+
+    On mesure sur les caractères et non sur les mots : le découpage en mots
+    varie d'une build de Tesseract à l'autre, la proportion de lettres dans
+    ce qui a été lu, non — c'est ce qui rend ce seuil transportable là où
+    celui de « reads_like_dialogue » ne l'est pas.
+    """
+    if not words:
+        return False
+    texte = "".join(word["text"] for word in words)
+    if not texte:
+        return False
+    lettres = sum(1 for caractere in texte if caractere.isalpha())
+    return lettres / len(texte) >= MIN_ALPHA_RATIO
 
 
 def read_words(data):

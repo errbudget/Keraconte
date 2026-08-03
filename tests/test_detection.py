@@ -35,6 +35,7 @@ from tests.helpers import (  # noqa: E402
     FIXTURES,
     HAZEL,
     HDV_OVERLAY_JEU,
+    HUD_BARRE_SORTS_JEU,
     HERCULE,
     HERCULE_PERMUTE,
     IDS,
@@ -486,15 +487,39 @@ def test_un_panneau_d_interface_ancre_a_droite_reste_muet():
     découpait en ses composants, et son bandeau d'onglets faisait une paire
     parfaitement crédible avec le corps du panneau juste dessous.
 
-    Ce qui sépare les deux cas est dans la géométrie du blob : un décor soudé
-    traverse l'écran de bord à bord (x=0), un panneau reste ancré à droite
-    (ici x=841). On ne re-segmente donc que les blobs partant du bord gauche.
+    Ce qui sépare les deux cas est l'invariant de hauteur des réponses : la
+    bulle d'Affreudite fait 150 px pour 72 px de réponses (0,48), quand le
+    bandeau « ACHAT VENTE » fait 106 px pour 155 px de « réponse » (1,46) —
+    un panneau prend sa liste entière pour bloc de réponses, un dialogue non.
 
-    Les interfaces du jeu étant DÉPLAÇABLES, le cas « panneau collé à gauche »
-    a été vérifié à part, y compris relié au bord droit : muet dans les deux
-    formes, la preuve d'appariement suffisant alors à l'écarter.
+    Une première version séparait les deux cas par la POSITION du blob (un
+    décor soudé traverserait l'écran, un panneau resterait ancré à droite).
+    C'était faux, et la trace en jeu l'a montré : le blob d'Affreudite part
+    de x=0 comme de x=842 selon l'image, et x=842 est justement la position
+    du blob de l'hôtel de vente. La garde refusait 63 % des blobs. Les
+    interfaces du jeu étant de surcroît DÉPLAÇABLES, aucune règle de position
+    ne peut tenir ici.
     """
     assert find_dialog(load(HDV_OVERLAY_JEU)) is None
+
+
+@pytest.mark.ocr_fixture
+def test_la_barre_de_sorts_du_jeu_reste_muette():
+    """Hors dialogue, le HUD du bas ne doit rien faire dire à l'application.
+
+    Relevé en jeu sur la carte de Nimotopia, dont le décor est très clair :
+    toute la barre du bas — chat, barre de sorts, minimap, jusqu'à la barre
+    des tâches du bureau — forme un blob sombre unique touchant le bord
+    droit. La re-segmentation en tire la barre de sorts, et la barre d'XP
+    juste dessous lui sert de bloc de réponses.
+
+    Aucune garde géométrique ne peut l'écarter : le ratio de hauteur vaut
+    0,79, en plein dans la plage des vrais dialogues (0,38-0,72 mesurés),
+    et le « , » du mojibake suffit au ratio de ponctuation. Ce qui le trahit
+    est la nature de ce que l'OCR y lit — des icônes agglomérées, pas des
+    mots.
+    """
+    assert find_dialog(load(HUD_BARRE_SORTS_JEU)) is None
 
 
 @pytest.mark.ocr_fixture

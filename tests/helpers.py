@@ -217,6 +217,21 @@ ROUKEROL = {
 # rendre l'une lisible et laisser l'autre muette.
 HDV_OVERLAY_JEU = {"file": "hud/hdv_overlay_item_jeu.png"}
 
+# Relevé en jeu, carte de Nimotopia : hors de tout dialogue, l'application
+# disait « EUSAUVS È©£@@@@@Që@@@ä@,V » en boucle. Le décor y est très clair,
+# si bien que toute la barre du bas — chat, barre de sorts, minimap, et
+# jusqu'à la barre des tâches du bureau — forme un blob sombre unique qui
+# touche le bord droit. La re-segmentation en tire la barre de sorts, et la
+# barre d'XP juste dessous lui sert de bloc de réponses : la paire est
+# géométriquement parfaite (ratio de hauteur 0,79, en plein dans la plage
+# d'un vrai dialogue), et le « , » du mojibake suffit au ratio de
+# ponctuation.
+#
+# Ce que l'OCR rend là n'est pas du texte mais des icônes agglomérées : la
+# part de caractères alphabétiques tombe à 0,43-0,50, quand le dialogue le
+# plus bruité du registre (CLIQUETIS, que des onomatopées) tient 0,82.
+HUD_BARRE_SORTS_JEU = {"file": "dialogues/interface_barre_sorts_jeu.png"}
+
 AFREUDITE_JEU = {
     "file": "dialogues/dialogue_afreudite_jeu.png",
     "expected": "Je ne trouve pas de bijou digne de ma beauté. Ici, il y a "
