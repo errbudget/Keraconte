@@ -377,7 +377,11 @@ est prise une fois par réplique**, à `_dire`, jamais par image.
 - ADR-0002 — banc d'essai chiffré pour tout moteur, appliqué ici à la carte
   louée avant la passe complète.
 - `plans/moteur-xtts-et-genre.md` — banc XTTS mesuré sur RTX 3070 Ti :
-  ratio 0,24×, 1,96 Go de VRAM au pic, 83 s de chargement.
+  ratio 0,24×, 1,96 Go de VRAM au pic, 83 s de chargement. **Le chargement
+  re-mesuré le 2026-08-10 tombe à 13,6 s** (modèle déjà en cache disque, GPU
+  libre) : les 83 s étaient un premier démarrage, téléchargement compris.
+  Sans effet sur la passe complète — payé une fois — mais l'argument du
+  « chargement coûteux » de la section « Contexte » en est affaibli.
 - `api.dofusdb.fr/npc-messages` — mesuré le 2026-08-03 : `total` = 55 037,
   texte sous `message.fr`, longueur moyenne 205,6 car. sur 350 relevés,
   langues `de`/`en`/`es`/`fr`/`pt`.
@@ -394,10 +398,20 @@ est prise une fois par réplique**, à `_dire`, jamais par image.
   **C'est cette lecture qui rend le volet 3 caduc.**
 - Coqui Public Model License (XTTS-v2) — restait à vérifier avant
   distribution ; sans objet tant que le pack n'est pas distribué.
-- `outils/banc_precompilation.py` — banc du 2026-08-10 sur RTX 3070 Ti
-  libre, échantillon stratifié en longueur (300 répliques, moyenne
+- `outils/banc_precompilation.py` — **banc du 2026-08-10 sur RTX 3070 Ti
+  libre, échantillon stratifié en longueur** (300 répliques, moyenne
   268 car. contre 205,6 au corpus : pondéré vers les longues, donc
-  conservateur).
+  conservateur). Résultat : **ratio 0,229×** (médian 0,226×) contre 0,24×
+  annoncé, débit 16,1 car/s contre 16,3, coût fixe par appel 0,176 s.
+  Extrapolation **44,8 h** par le ratio, **45,4 h** par le modèle affine
+  (fixe + pente × caractères) — l'écart de 1 % entre les deux montre que le
+  coût fixe ne domine pas, et l'ADR annonçait 46 h : **validée bien en deçà
+  des ±20 % exigés**. Les heures scalent linéairement avec le volume total
+  de caractères, lui-même estimé sur 350 relevés — c'est de cette estimation
+  que l'extrapolation hérite son incertitude, pas du ratio.
+  Le ratio croît légèrement avec la longueur (0,213× sous 80 caractères,
+  0,235× au-dessus de 450) : les répliques courtes portent
+  proportionnellement plus de silence de début et de fin.
 - Compression mesurée le 2026-08-10 (ffmpeg, 24 kHz mono) : WAV 16 bits
   46,9 ko/s, Opus 24 kbps 4,6 ko/s, **facteur 10,1×**. Sur 193 h d'audio :
   **33,4 Go en WAV, 3,3 Go en Opus** — l'estimation de 2,1 Go de la section
