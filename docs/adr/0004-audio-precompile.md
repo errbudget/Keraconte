@@ -1,7 +1,8 @@
 # ADR-0004 — Audio précompilé : la synthèse sort du temps de jeu
 
-- **Statut** : Proposé — **volet 3 (distribution) caduc**, amendé le 2026-08-10
-- **Date** : 2026-08-03 (amendements du 2026-08-10 : CGU lues, banc mesuré)
+- **Statut** : Proposé — **volet 3 (distribution) à redécider** (CGU lues le
+  2026-08-10) ; volets 1, 2 et 4 inchangés
+- **Date** : 2026-08-03 (compléments du 2026-08-10 : CGU relevées, banc mesuré)
 
 ## Contexte et problème
 
@@ -137,14 +138,15 @@ Les orphelins sont conservés plutôt que supprimés : un id retiré de l'API
 peut réapparaître, et l'espace en jeu est marginal. Une commande de purge
 explicite reste disponible.
 
-### 3. Le pack est distribué — ~~et c'est le point à assumer~~
+### 3. Le pack est distribué — et c'est le point à assumer
 
-> **AMENDEMENT DU 2026-08-10 — CE VOLET EST CADUC.** Les CGU d'Ankama
-> (version d'août 2025) ont été lues intégralement, ce que cette section
-> n'avait pas fait : elle raisonnait sur PolyForm NC et l'anonymat. Le
-> texte est sans ambiguïté et ce volet **tombe**. Voir « Ce que disent les
-> CGU » ci-dessous. Les volets 1, 2 et 4 restent valides — l'ADR l'avait
-> prévu — et le repli *pack privé* devient la forme retenue.
+> **À REDÉCIDER — lecture des CGU du 2026-08-10.** Cette section évaluait le
+> risque sur PolyForm NC et l'anonymat du mainteneur, sans avoir lu les CGU
+> d'Ankama. Elles l'ont été depuis (version d'août 2025), et ce qu'elles
+> disent est reporté en fin de section : les articles cités pèsent
+> nettement plus lourd que ce que la §3 supposait. **Le statut du volet 3
+> est donc rouvert, pas tranché ici** — la décision revient au mainteneur.
+> Les volets 1, 2 et 4 ne dépendent pas de son issue.
 
 La décision retenue est de **produire le pack une fois sur GPU loué et de
 le distribuer**, plutôt que de faire générer chaque installation.
@@ -165,11 +167,11 @@ PolyForm Noncommercial et l'anonymat du mainteneur protègent contre l'usage
 commercial et l'exposition personnelle — **ni l'un ni l'autre ne protège le
 dépôt d'une demande de retrait**.
 
-~~Cette ADR ne tranche pas cette question juridique : elle la **consigne
-comme acceptée en connaissance de cause**, et rend la décision réversible.~~
+Cette ADR ne tranche pas cette question juridique : elle la **consigne
+comme acceptée en connaissance de cause**, et rend la décision réversible.
 
-**La question est tranchée depuis le 2026-08-10 : par le texte, pas par
-l'appréciation du risque.**
+**Ce qui suit ne tranche pas davantage — c'est le relevé de ce que dit le
+texte, que la section ci-dessus n'avait pas consulté.**
 
 #### Ce que disent les CGU (lues le 2026-08-10, version d'août 2025)
 
@@ -196,32 +198,35 @@ Réservation lisible par machine : `TDM-RESERVATION: 1`.
 
 **Art. 16.6** : l'article 13 **survit à la résiliation** du compte.
 
-#### Pourquoi le raisonnement d'origine ne tenait pas
+#### En quoi cela déplace les prémisses de la §3
 
-- **PolyForm NC ne couvre pas ce risque.** L'article 13 n'est pas
+- **PolyForm NC ne répond pas à l'article 13.** Celui-ci n'est pas
   conditionné au caractère commercial : il exige une autorisation écrite.
   La licence non-commerciale répond à l'art. 5.2.7 (« ne pas exploiter les
-  Jeux à des fins commerciales »), pas à l'article 13.
-- **Le risque n'était pas « une demande de retrait ».** L'art. 13.5
-  qualifie la collecte de **contrefaçon** — un délit, pas un litige
-  d'hébergement.
-- **Une nuance réelle, qui ne sauve pas le volet 3** : l'art. 13.5 vise
-  « le Site et le Launcher ». Nos outils frappent `api.dofusdb.fr`, base
-  communautaire tierce, et non un service Ankama — le scrape ne heurte
-  donc pas frontalement 13.5. Mais le *contenu* obtenu reste couvert par
-  13.1/13.2 quelle que soit sa provenance : DofusDB ne peut pas concéder
-  des droits qu'il ne détient pas.
+  Jeux à des fins commerciales »). La §3 s'appuyait sur la première pour
+  couvrir un risque relevant du second.
+- **Le risque envisagé était « une demande de retrait ».** L'art. 13.5
+  qualifie la collecte de **contrefaçon** — registre différent.
+- **Une nuance en sens inverse, à ne pas perdre** : l'art. 13.5 vise « le
+  Site et le Launcher ». Les outils du dépôt frappent `api.dofusdb.fr`,
+  base communautaire tierce, et non un service Ankama — le scrape ne
+  heurte donc pas frontalement 13.5. Le *contenu* obtenu reste toutefois
+  couvert par 13.1/13.2 quelle que soit sa provenance, DofusDB ne pouvant
+  concéder des droits qu'il ne détient pas.
 
-#### Ce qui est retenu à la place
+#### Ce que cela implique pour la suite
 
-Le repli *pack privé* documenté plus bas devient **la forme du pack** :
-génération et usage locaux, jamais de distribution. L'ADR avait prévu que
-ce basculement **ne change aucun code de runtime** — c'est le cas, et les
-générateurs livrés le 2026-08-10 sont déjà écrits pour ce régime (dépôt =
-générateurs, sortie = artefact local jamais versionné).
+Trancher le volet 3 dans un sens ou dans l'autre appartient au mainteneur.
+Deux remarques factuelles pour cette décision :
 
-Rouvrir le volet 3 exigerait un **accord écrit d'Ankama**, pas une nouvelle
-appréciation du risque.
+- Le repli *pack privé* documenté plus bas (génération et usage locaux,
+  jamais de distribution) **est déjà la forme effective** de ce qui a été
+  livré le 2026-08-10 : le dépôt porte les générateurs, leur sortie est un
+  artefact local que le `.gitignore` exclut. Aucun code de runtime ne
+  dépend de ce choix — l'ADR l'avait prévu, c'est vérifié.
+- Ouvrir la distribution supposerait de traiter l'exigence d'accord écrit
+  des art. 13.1/13.2, indépendamment de la question du caractère
+  commercial.
 
 **Second verrou, indépendant du premier** : XTTS-v2 est sous *Coqui Public
 Model License*, qui restreint l'usage — y compris celui des sorties audio —
@@ -395,7 +400,7 @@ est prise une fois par réplique**, à `_dire`, jamais par image.
   extraire / distribuer / œuvres dérivées interdits sans accord écrit),
   13.5 (opposition TDM, moissonnage = contrefaçon, `TDM-RESERVATION: 1`),
   5.2.7 (usage non commercial) et 16.6 (l'art. 13 survit à la résiliation).
-  **C'est cette lecture qui rend le volet 3 caduc.**
+  **C'est cette lecture qui rouvre le volet 3.**
 - Coqui Public Model License (XTTS-v2) — restait à vérifier avant
   distribution ; sans objet tant que le pack n'est pas distribué.
 - `outils/banc_precompilation.py` — **banc du 2026-08-10 sur RTX 3070 Ti
