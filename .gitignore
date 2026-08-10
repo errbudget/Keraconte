@@ -29,3 +29,8 @@ tests/fixtures/combats/
 echantillon-repliques.json
 pack-audio/
 releve-banc*.json
+
+# Copie locale des CGU d'Ankama, déposée pour la lecture juridique de
+# l'ADR-0004 (art. 13.1/13.2 : « aucune utilisation sans autorisation
+# écrite »). Ce qui est versionné, c'est l'ANALYSE dans l'ADR — pas le texte.
+cgu

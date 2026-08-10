@@ -1,7 +1,7 @@
 # ADR-0004 — Audio précompilé : la synthèse sort du temps de jeu
 
-- **Statut** : Proposé
-- **Date** : 2026-08-03
+- **Statut** : Proposé — **volet 3 (distribution) caduc**, amendé le 2026-08-10
+- **Date** : 2026-08-03 (amendements du 2026-08-10 : CGU lues, banc mesuré)
 
 ## Contexte et problème
 
@@ -137,7 +137,14 @@ Les orphelins sont conservés plutôt que supprimés : un id retiré de l'API
 peut réapparaître, et l'espace en jeu est marginal. Une commande de purge
 explicite reste disponible.
 
-### 3. Le pack est distribué — et c'est le point à assumer
+### 3. Le pack est distribué — ~~et c'est le point à assumer~~
+
+> **AMENDEMENT DU 2026-08-10 — CE VOLET EST CADUC.** Les CGU d'Ankama
+> (version d'août 2025) ont été lues intégralement, ce que cette section
+> n'avait pas fait : elle raisonnait sur PolyForm NC et l'anonymat. Le
+> texte est sans ambiguïté et ce volet **tombe**. Voir « Ce que disent les
+> CGU » ci-dessous. Les volets 1, 2 et 4 restent valides — l'ADR l'avait
+> prévu — et le repli *pack privé* devient la forme retenue.
 
 La décision retenue est de **produire le pack une fois sur GPU loué et de
 le distribuer**, plutôt que de faire générer chaque installation.
@@ -158,8 +165,63 @@ PolyForm Noncommercial et l'anonymat du mainteneur protègent contre l'usage
 commercial et l'exposition personnelle — **ni l'un ni l'autre ne protège le
 dépôt d'une demande de retrait**.
 
-Cette ADR ne tranche pas cette question juridique : elle la **consigne
-comme acceptée en connaissance de cause**, et rend la décision réversible.
+~~Cette ADR ne tranche pas cette question juridique : elle la **consigne
+comme acceptée en connaissance de cause**, et rend la décision réversible.~~
+
+**La question est tranchée depuis le 2026-08-10 : par le texte, pas par
+l'appréciation du risque.**
+
+#### Ce que disent les CGU (lues le 2026-08-10, version d'août 2025)
+
+Trois articles portent sur le pack. Ils n'étaient pas cités ci-dessus.
+
+**Art. 13.1** — la liste des éléments protégés nomme explicitement
+**« dialogue »**, et aussi « son », « composition musicale », « effet
+audiovisuel », « transcription de conversation dans les Jeux ». Ils « ne
+peuvent faire l'objet d'**aucune utilisation** sans l'autorisation
+préalable et écrite d'Ankama ».
+
+**Art. 13.2** — interdiction « en tout ou partie, de **copier, reproduire,
+traduire, extraire**, […] **distribuer ou créer des œuvres dérivées**
+inspirées des Jeux ou du contenu sans l'accord écrit préalable ». Le pack
+est les quatre à la fois : extraction, reproduction, œuvre dérivée,
+distribution.
+
+**Art. 13.5 — le verrou que l'analyse d'origine ignorait.** Ankama exerce
+son droit d'opposition à la fouille de textes et de données (art.
+L. 122-5-3 CPI) : les opérations de moissonnage « y compris par des
+dispositifs de collecte automatisée de données, **constituent donc des
+actes de contrefaçon** sauf accord spécifique formellement exprimé ».
+Réservation lisible par machine : `TDM-RESERVATION: 1`.
+
+**Art. 16.6** : l'article 13 **survit à la résiliation** du compte.
+
+#### Pourquoi le raisonnement d'origine ne tenait pas
+
+- **PolyForm NC ne couvre pas ce risque.** L'article 13 n'est pas
+  conditionné au caractère commercial : il exige une autorisation écrite.
+  La licence non-commerciale répond à l'art. 5.2.7 (« ne pas exploiter les
+  Jeux à des fins commerciales »), pas à l'article 13.
+- **Le risque n'était pas « une demande de retrait ».** L'art. 13.5
+  qualifie la collecte de **contrefaçon** — un délit, pas un litige
+  d'hébergement.
+- **Une nuance réelle, qui ne sauve pas le volet 3** : l'art. 13.5 vise
+  « le Site et le Launcher ». Nos outils frappent `api.dofusdb.fr`, base
+  communautaire tierce, et non un service Ankama — le scrape ne heurte
+  donc pas frontalement 13.5. Mais le *contenu* obtenu reste couvert par
+  13.1/13.2 quelle que soit sa provenance : DofusDB ne peut pas concéder
+  des droits qu'il ne détient pas.
+
+#### Ce qui est retenu à la place
+
+Le repli *pack privé* documenté plus bas devient **la forme du pack** :
+génération et usage locaux, jamais de distribution. L'ADR avait prévu que
+ce basculement **ne change aucun code de runtime** — c'est le cas, et les
+générateurs livrés le 2026-08-10 sont déjà écrits pour ce régime (dépôt =
+générateurs, sortie = artefact local jamais versionné).
+
+Rouvrir le volet 3 exigerait un **accord écrit d'Ankama**, pas une nouvelle
+appréciation du risque.
 
 **Second verrou, indépendant du premier** : XTTS-v2 est sous *Coqui Public
 Model License*, qui restreint l'usage — y compris celui des sorties audio —
@@ -322,7 +384,24 @@ est prise une fois par réplique**, à `_dire`, jamais par image.
 - `outils/generer_table_genre.py` — le générateur dont celui du pack reprend
   la discipline (et dont les « 91 325 ids » sont des paires, pas des textes
   distincts).
-- Coqui Public Model License (XTTS-v2) — à vérifier explicitement avant
-  toute distribution des sorties audio.
+- **CGU d'Ankama, version d'août 2025 — lues intégralement le 2026-08-10**
+  (`https://www.dofus.com/fr/cgu`, inaccessible aux agents : 403 puis 302
+  vers un flux d'authentification ; copie fournie par le mainteneur). Art.
+  13.1 (« dialogue » nommément protégé), 13.2 (copier / reproduire /
+  extraire / distribuer / œuvres dérivées interdits sans accord écrit),
+  13.5 (opposition TDM, moissonnage = contrefaçon, `TDM-RESERVATION: 1`),
+  5.2.7 (usage non commercial) et 16.6 (l'art. 13 survit à la résiliation).
+  **C'est cette lecture qui rend le volet 3 caduc.**
+- Coqui Public Model License (XTTS-v2) — restait à vérifier avant
+  distribution ; sans objet tant que le pack n'est pas distribué.
+- `outils/banc_precompilation.py` — banc du 2026-08-10 sur RTX 3070 Ti
+  libre, échantillon stratifié en longueur (300 répliques, moyenne
+  268 car. contre 205,6 au corpus : pondéré vers les longues, donc
+  conservateur).
+- Compression mesurée le 2026-08-10 (ffmpeg, 24 kHz mono) : WAV 16 bits
+  46,9 ko/s, Opus 24 kbps 4,6 ko/s, **facteur 10,1×**. Sur 193 h d'audio :
+  **33,4 Go en WAV, 3,3 Go en Opus** — l'estimation de 2,1 Go de la section
+  « Ce que pèse le corpus » supposait 3 ko/s et est optimiste d'environ
+  57 %. Le générateur écrit du WAV : l'encodage Opus reste à faire.
 - README, « Licence » (PolyForm Noncommercial 1.0.0) et « Kéraconte est un
   outil non officiel, sans lien avec Ankama ».
