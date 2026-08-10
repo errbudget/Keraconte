@@ -76,6 +76,14 @@ VOIX_PAR_CANAL = {
 
 MODELE = "tts_models/multilingual/multi-dataset/xtts_v2"
 
+# Mesurés le 2026-08-10 sur RTX 3070 Ti libre, SUR LE CHEMIN DÉCOUPÉ — celui
+# que « synthetiser » emprunte réellement, phrase par phrase. Le banc mesure
+# le bloc entier et donne 0,229× / 16,1 car/s ; le découpage coûte +2,6 %
+# (comparé sur 40 ids identiques, 148 appels pour 40 répliques). C'est cette
+# valeur-ci qu'il faut pour estimer une passe, pas celle du banc.
+RATIO_SYNTHESE = 0.233
+DEBIT_CAR_PAR_S = 16.4
+
 
 def empreinte(texte):
     """Empreinte stable du texte source, pour décider de la péremption.
@@ -247,8 +255,7 @@ def main():
 
     if args.sec_a_blanc:
         caracteres = sum(len(r["texte"]) for r in a_faire)
-        # 0,224× mesuré au banc du 2026-08-10, 17,4 car/s de débit de parole.
-        heures = (caracteres / 17.4) * 0.224 / 3600
+        heures = (caracteres / DEBIT_CAR_PAR_S) * RATIO_SYNTHESE / 3600
         print(f"  {caracteres} caractères → ≈ {heures:.2f} h de GPU estimées")
         return
 

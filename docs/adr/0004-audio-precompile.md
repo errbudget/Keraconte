@@ -412,6 +412,18 @@ est prise une fois par réplique**, à `_dire`, jamais par image.
   Le ratio croît légèrement avec la longueur (0,213× sous 80 caractères,
   0,235× au-dessus de 450) : les répliques courtes portent
   proportionnellement plus de silence de début et de fin.
+- **Chemin découpé re-mesuré séparément** — le banc appelle le moteur une
+  fois par réplique, le générateur une fois par *phrase* (voir §
+  « découpage »). Le coût fixe de 0,176 s par appel se paie alors N fois, et
+  les segments courts portent plus de silence : les deux effets pouvaient
+  gonfler la passe. Comparé sur **40 ids identiques** (148 appels pour 40
+  répliques, 3,7 phrases par réplique) : ratio **0,233×** contre 0,230×,
+  débit 16,4 contre 16,6 car/s, soit **+2,6 % de synthèse** et **+1,3 %
+  d'audio** — passe complète **44,7 h** contre 43,6 h. Le surcoût du
+  découpage est donc réel mais marginal : le coût fixe est un intercept de
+  régression, pas un péage payé plein à chaque appel. **C'est 0,233× /
+  16,4 car/s que le générateur utilise pour ses estimations**, pas les
+  valeurs du banc.
 - Compression mesurée le 2026-08-10 (ffmpeg, 24 kHz mono) : WAV 16 bits
   46,9 ko/s, Opus 24 kbps 4,6 ko/s, **facteur 10,1×**. Sur 193 h d'audio :
   **33,4 Go en WAV, 3,3 Go en Opus** — l'estimation de 2,1 Go de la section
