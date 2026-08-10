@@ -7,6 +7,7 @@ import os
 import re
 import shutil
 import sys
+import tempfile
 import time
 
 import cv2
@@ -151,6 +152,12 @@ MIN_PUNCTUATION_RATIO = 0.08
 # (721/765 px) la rendent risquée. Calibrée sur 2560×1350 (largeur mini 300 px).
 MIN_AREA = 40000
 MIN_WIDTH_RATIO = 300 / 2560
+# Hauteur minimale d'un blob écarté au bord droit pour qu'il vaille la peine
+# d'être vidé sur disque (diagnostic QR_DEBUG seul, aucun effet sur la lecture).
+# Une bulle mesure 150 à 660 px de haut sur les registres, soit 0,10 à 0,46 de
+# la hauteur d'image : sous 0,10, le blob est un bandeau qui ne peut pas en
+# cacher une. En fraction, jamais en pixels d'une résolution donnée.
+MIN_BLOB_HEIGHT_RATIO = 0.10
 # Plancher de longueur du texte lu. Deux valeurs selon la preuve accumulée :
 # sans réponses appariées, le bloc n'est admis que sur sa hauteur ou sa
 # ponctuation, et ce plancher écarte le bruit OCR d'un panneau (fragments
@@ -161,6 +168,47 @@ MIN_WIDTH_RATIO = 300 / 2560
 # trois lettres.
 MIN_CHARS = 20
 MIN_CHARS_PAIRED = 6
+
+# Part minimale de caractères alphabétiques dans le texte retenu.
+#
+# Une grille d'icônes OCRisée ne rend pas des mots mais des agglomérats de
+# signes : la barre de sorts du jeu sort en « EUSAUVS È©£@@@@@Që@@@ä@,V ».
+# Aucune garde géométrique ne l'écarte — appariée à la barre d'XP juste
+# dessous, elle présente un ratio de hauteur de 0,79, en plein dans la plage
+# des vrais dialogues — et le « , » du mojibake lui suffit à passer le ratio
+# de ponctuation.
+#
+# Mesuré sur les 31 blocs lus du registre : les vrais dialogues tiennent 0,82
+# à 0,98, le HUD tombe à 0,43-0,50 sur cinq vidages consécutifs. Le plancher
+# est posé à mi-chemin. Le pire cas admis est CLIQUETIS (0,82), qui n'est
+# QUE des onomatopées entre astérisques — un dialogue plus alphabétique que
+# lui n'existe pas dans le jeu.
+#
+# Contrairement au ratio de ponctuation, ce critère ne compte pas les mots
+# mais les caractères : une build de Tesseract qui découpe autrement déplace
+# le décompte de mots, pas la proportion de lettres dans ce qu'elle a lu.
+MIN_ALPHA_RATIO = 0.66
+
+# Part maximale du texte lu qu'un seul « mot » peut accaparer.
+#
+# Le seuil alphabétique ci-dessus n'attrape qu'une des deux formes du bruit
+# d'icônes. Relevé sur une autre carte, la MÊME barre de sorts sort en
+# « CPETEUSAUw…e » : 0,85 de caractères alphabétiques, soit plus « lisible »
+# que CLIQUETIS (0,82), un vrai dialogue. Aucun seuil sur la NATURE des
+# caractères ne peut donc trancher — le bruit varie d'une image à l'autre.
+#
+# Ce qui ne varie pas est la STRUCTURE : l'OCR d'une grille d'icônes agglomère
+# tout en un unique fragment, quand un dialogue répartit sur des mots. Mesuré
+# sur le registre et trois vidages du flux : faux positifs 0,85 à 0,92,
+# dialogues 0,04 à 0,41 — le maximum étant CLIQUETIS, quatre onomatopées dont
+# une de 30 lettres. Plancher posé à mi-chemin.
+#
+# Ce critère est le plus robuste des trois testés ici : il ne dépend ni de la
+# nature des caractères (qui varie avec le bruit), ni du décompte de mots (qui
+# varie avec la build de Tesseract), mais du rapport entre le plus long
+# fragment et l'ensemble — stable tant que l'OCR sépare les mots par des
+# espaces.
+MAX_WORD_DOMINANCE = 0.60
 
 # Le texte de dialogue est blanc sur gris. Mesuré : 2.9 % dans une vraie
 # bulle contre 0.1 % pour un bloc d'interface sans texte.
@@ -277,6 +325,88 @@ def bubble_mask(frame):
     return cv2.morphologyEx(mask, cv2.MORPH_OPEN, OPEN_KERNEL)
 
 
+def _vider_image(frame, blob):
+    """Sauve une image écartée au bord droit, pour l'analyser hors ligne.
+
+    Le défaut ne se reproduit pas sur les captures d'écran fournies à la main :
+    celles-ci contiennent la barre de titre de la fenêtre (2710 px de large)
+    là où le portail livre le contenu seul (2560 px, ce que dit la trace :
+    « width*0.99 = 2534 »). Trois correctifs ont été conçus contre une image
+    qui PASSE, donc validés sur la mauvaise entrée. Ce vidage donne l'image
+    exactement telle que « find_bubbles » l'a vue.
+
+    Piège vu au premier essai, qui a ramené une image SANS dialogue : le rejet
+    au bord droit se produit à CHAQUE image, dialogue ou non — le décor et
+    l'interface latérale y touchent en permanence. Garder « la première »
+    revenait à garder l'image de démarrage.
+
+    On garde donc un ROULEMENT des dernières images retenues, plutôt qu'une
+    seule : le diagnostic ne dépend plus de l'instant exact où l'on quitte.
+    Un premier filtre écarte les blobs trop PLATS pour cacher une bulle
+    (bandeaux, liserés d'interface), en fraction de la hauteur d'image et
+    jamais en pixels d'une résolution donnée.
+    """
+    if not os.environ.get("QR_DEBUG"):
+        return
+    height = frame.shape[0]
+    _y, _x, _w, h = blob
+    if h < height * MIN_BLOB_HEIGHT_RATIO:
+        return
+    global _VIDAGES
+    chemin = os.path.join(
+        tempfile.gettempdir(), f"keraconte-bord-droit-{_VIDAGES % NB_VIDAGES}.png"
+    )
+    _VIDAGES += 1
+    try:
+        cv2.imwrite(chemin, frame)
+        _trace(f"  >>> image écartée sauvée (blob h={h}) : {chemin}")
+    except Exception as erreur:  # jamais laisser un diagnostic casser la lecture
+        _trace(f"  >>> vidage impossible : {erreur}")
+
+
+def _vider_lu(frame, texte):
+    """Sauve l'image d'un texte ADMIS, pour instruire un faux positif.
+
+    Pendant du vidage des blobs écartés, à l'autre bout de la porte : quand
+    l'application lit ce qu'elle ne devrait pas (un panneau d'interface), il
+    faut l'image telle que la détection l'a vue, avec le texte qu'elle en a
+    tiré. Les captures d'écran fournies à la main ne suffisent pas — cadrage
+    et dimensions diffèrent du flux, et c'est ce qui a masqué le défaut
+    Affreudite pendant trois correctifs.
+
+    Roulement comme pour les blobs : l'instant du Ctrl+C n'importe pas. Le
+    texte accompagne l'image dans un « .txt » voisin, pour retrouver LEQUEL
+    des faux positifs on tient sans avoir à relire l'OCR.
+    """
+    if not os.environ.get("QR_DEBUG"):
+        return
+    global _LUS
+    base = os.path.join(tempfile.gettempdir(), f"keraconte-lu-{_LUS % NB_VIDAGES}")
+    _LUS += 1
+    try:
+        cv2.imwrite(f"{base}.png", frame)
+        with open(f"{base}.txt", "w", encoding="utf-8") as fichier:
+            fichier.write(texte)
+        _trace(f"  >>> image lue sauvée : {base}.png")
+    except Exception as erreur:  # jamais laisser un diagnostic casser la lecture
+        _trace(f"  >>> vidage impossible : {erreur}")
+
+
+# Combien d'images écartées on garde en roulement (diagnostic QR_DEBUG seul).
+# Huit couvre deux secondes à --fps 4 : assez pour que le dialogue visé y
+# figure quel que soit l'instant du Ctrl+C, sans remplir le disque.
+NB_VIDAGES = 8
+_VIDAGES = 0
+_LUS = 0
+
+# Les blocs tirés d'un blob écarté au bord droit, pour l'image en cours.
+# Ils sont admis plus largement que les autres — le blob qui les contenait,
+# lui, était rejeté — et doivent donc prouver davantage : voir la garde de
+# hauteur dans « find_dialog_box ». Rempli par « find_bubbles », vidé à
+# chaque image ; « find_dialog_box » le consulte pour la même image.
+_RECUPEREES = set()
+
+
 def find_bubbles(frame):
     """Repère les blocs qui ont l'aspect d'une bulle, sans lire leur texte.
 
@@ -289,9 +419,12 @@ def find_bubbles(frame):
     # La fermeture soude les lignes d'un même bloc ; c'est elle aussi qui,
     # quand bulle et réponses se touchent, les fond en un seul contour.
     # « splits_into_pair » repart du masque d'avant pour les distinguer.
-    mask = cv2.morphologyEx(bubble_mask(frame), cv2.MORPH_CLOSE, CLOSE_KERNEL)
+    brut = bubble_mask(frame)
+    mask = cv2.morphologyEx(brut, cv2.MORPH_CLOSE, CLOSE_KERNEL)
 
     contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    # Remis à zéro à chaque image : ne marque que la segmentation courante.
+    _RECUPEREES.clear()
     # L'aire mini est absolue (une bulle ne grandit pas avec l'aire de
     # l'écran, cf. MIN_AREA) ; la largeur mini suit la largeur de l'image.
     min_area = MIN_AREA
@@ -304,19 +437,69 @@ def find_bubbles(frame):
         # L'interface de droite touche le bord ; le reste (chat compris)
         # est écarté par l'exigence d'un bloc de réponses apparié.
         if x + w > width * 0.99:
-            # Trace (silencieuse hors QR_DEBUG) : un blob assez grand écarté par
-            # le bord droit peut être une bulle SOUDÉE au décor jusqu'au bord —
-            # elle disparaît alors sans laisser de box, et le lecteur ne voit
-            # « rien » sans savoir pourquoi. Sert à mesurer ce cas en jeu.
             _trace(
                 f"  contour ÉCARTÉ=bord-droit (y={y} x={x} w={w} h={h}) "
                 f"x+w={x + w} > {width * 0.99:.0f}"
             )
+            _vider_image(frame, (y, x, w, h))
+            # Écarter le blob ENTIER perdait la bulle qu'il pouvait contenir.
+            # Mesuré en jeu (Affreudite, forge de Brâkmar) : le décor gris de
+            # la carte entre dans le masque comme un fond de bulle, la
+            # fermeture soude tout jusqu'au bord, et un contour de 2560×773
+            # avalait la bulle à 100 % — d'où « ocr=0ms », l'OCR n'était même
+            # pas appelé et le dialogue n'était JAMAIS lu.
+            recuperees = _resegmenter(brut, (y, x, w, h), width, min_area, min_width)
+            # Ces blocs-là devront prouver davantage : voir « _RECUPEREES ».
+            _RECUPEREES.update(recuperees)
+            boxes.extend(recuperees)
             continue
         boxes.append((y, x, w, h))
 
     boxes.sort()
     return boxes, height
+
+
+def _resegmenter(brut, blob, width, min_area, min_width):
+    """Cherche des bulles DANS un blob écarté au bord droit.
+
+    Même mécanique que « splits_into_pair » : on repart du masque d'AVANT
+    fermeture, restreint au blob. Sans la fermeture qui les soudait, la bulle
+    et le décor redeviennent des contours distincts, et les critères habituels
+    s'appliquent à chacun — aucun seuil nouveau, aucun cas particulier.
+
+    Les trois filtres sont ceux de « find_bubbles », y compris le bord droit :
+    une sous-partie qui touche ELLE-MÊME le bord reste écartée. C'est ce qui
+    garde dehors le panneau d'interface latéral, présent à chaque image.
+
+    Ne rend donc la parole qu'aux blocs qui auraient été admis si le décor ne
+    les avait pas soudés au bord ; la preuve d'appariement, elle, reste due.
+
+    La géométrie du blob ne sépare RIEN, contrairement à ce qu'on a d'abord
+    cru — mesuré sur une trace de 170 images en jeu : le blob part de x=0 ou
+    de x=842 selon ce que le décor soude à l'instant, et x=842 est exactement
+    la position du blob de l'hôtel de vente. Une garde sur x refusait 63 %
+    des images où la bulle était pourtant récupérable, d'où les minutes
+    d'attente signalées. L'aire relative ne sépare pas davantage : le bandeau
+    fautif fait 4,4 % de son blob quand la vraie bulle en fait 5,5 %.
+
+    Ce qui sépare est la RÉPONSE que chaque bloc se trouve — voir la garde de
+    hauteur dans « find_dialog_box », qui s'applique aux blocs venus d'ici.
+    """
+    y, x, w, h = blob
+    contours, _ = cv2.findContours(
+        brut[y : y + h, x : x + w], cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
+    )
+    parts = []
+    for contour in contours:
+        cx, cy, cw, ch = cv2.boundingRect(contour)
+        if cw * ch < min_area or cw < min_width:
+            continue
+        if (x + cx) + cw > width * 0.99:
+            continue
+        parts.append((y + cy, x + cx, cw, ch))
+    if parts:
+        _trace(f"  blob ré-segmenté : {len(parts)} bloc(s) récupéré(s) {sorted(parts)}")
+    return parts
 
 
 def splits_into_pair(frame, box):
@@ -526,6 +709,26 @@ def find_dialog_box(frame, boxes=None):
                 # instantané ne montre pas la variance de la fusion morphologique.
                 _trace(f"  box (y={y} x={x} w={w} h={h}) PORTE=pas-de-preuve")
                 continue
+        # Un bloc tiré d'un blob écarté au bord droit doit prouver davantage :
+        # sa réponse ne doit pas être PLUS HAUTE que lui. C'est l'invariant
+        # déjà posé par « splits_into_pair » — un vrai bloc de réponses (1 à 4
+        # options) est toujours plus court que la bulle qu'il suit, tandis que
+        # la « réponse » d'un panneau est sa liste entière.
+        #
+        # Il ne s'applique qu'ICI, aux blocs récupérés : eux seuls entrent par
+        # une porte que leur blob parent avait fermée. Les blocs trouvés
+        # normalement gardent le comportement d'avant, inchangé.
+        #
+        # Mesuré sur les deux captures du flux : bulle d'Affreudite h=150 pour
+        # une réponse h=72 (0,48), bandeau « ACHAT VENTE » h=106 pour une
+        # « réponse » h=155 (1,46). Le premier passe, le second est écarté —
+        # c'est ce faux positif qui faisait lire l'hôtel de vente en jeu.
+        if replies is not None and (y, x, w, h) in _RECUPEREES and replies[3] > h:
+            _trace(
+                f"  box (y={y} x={x} w={w} h={h}) PORTE=réponse-trop-haute "
+                f"reply_h={replies[3]} > {h}"
+            )
+            continue
         region = frame[y : y + h, x : x + w]
         white = (region > 200).all(2).mean()
         if not MIN_WHITE_RATIO <= white <= MAX_WHITE_RATIO:
@@ -586,6 +789,18 @@ def find_dialog_box(frame, boxes=None):
                 f"mots={len(words)} paired={paired}"
             )
             continue
+        # Le test de ponctuation ci-dessus ne s'applique qu'aux blocs SANS
+        # preuve. Or une grille d'icônes en produit une : la barre de sorts
+        # s'apparie à la barre d'XP juste dessous, avec une géométrie de vrai
+        # dialogue. Ce qui la trahit est le texte lui-même — des signes, pas
+        # des lettres. Le seuil porte sur les caractères, donc il vaut pour
+        # les deux chemins, apparié ou non.
+        if not reads_like_words(words):
+            _trace(
+                f"  box (y={y} x={x} w={w} h={h}) PORTE=alpha "
+                f"mots={len(words)} paired={paired}"
+            )
+            continue
         text = clean(" ".join(word["text"] for word in words))
         floor = MIN_CHARS_PAIRED if paired else MIN_CHARS
         if len(text) >= floor:
@@ -594,6 +809,7 @@ def find_dialog_box(frame, boxes=None):
                 f"| box=(y={y} x={x} w={w} h={h}) paired={paired} "
                 f"origine={_origine} reply={replies}"
             )
+            _vider_lu(frame, text)
             return text, (y, x, w, h)
         _trace(
             f"  box (y={y} x={x} w={w} h={h}) PORTE=floor "
@@ -646,6 +862,43 @@ def reads_like_dialogue(words):
         1 for word in words if any(sign in word["text"] for sign in ".,!?…")
     )
     return ponctues / len(words) >= MIN_PUNCTUATION_RATIO
+
+
+def reads_like_words(words):
+    """Ce que l'OCR a lu est-il fait de lettres, ou de signes agglomérés ?
+
+    Le pendant de « reads_like_dialogue » pour les blocs APPARIÉS, que la
+    preuve relationnelle dispense du test de ponctuation. Une grille d'icônes
+    en sort une paire crédible (barre de sorts + barre d'XP dessous) dont le
+    texte n'a pourtant rien de lisible.
+
+    Deux formes du même bruit, relevées toutes deux en jeu sur la barre de
+    sorts, et il faut les deux tests :
+
+    - des SIGNES (« EUSAUVS È©£@@@@@Që@@@ä@,V ») : la part de caractères
+      alphabétiques tombe à 0,43 quand un dialogue tient 0,82 au pire ;
+    - des LETTRES (« CPETEUSAUw…e ») : la part alphabétique remonte à 0,85 —
+      au-dessus de CLIQUETIS, un vrai dialogue — mais tout le texte tient en
+      un seul fragment, quand un dialogue le répartit sur des mots.
+
+    Aucun des deux ne compte les mots : leur découpage varie d'une build de
+    Tesseract à l'autre, ce qui rend intransportable le seuil de
+    « reads_like_dialogue ». On mesure des longueurs de caractères, stables.
+    """
+    if not words:
+        return False
+    longueurs = [len(word["text"]) for word in words]
+    total = sum(longueurs)
+    if not total:
+        return False
+    texte = "".join(word["text"] for word in words)
+    lettres = sum(1 for caractere in texte if caractere.isalpha())
+    if lettres / total < MIN_ALPHA_RATIO:
+        return False
+    # Deuxième forme du même bruit : quand l'OCR rend les icônes en lettres
+    # plutôt qu'en signes, la part alphabétique ne trahit plus rien, mais
+    # l'agglomérat reste — un seul fragment pour presque tout le texte.
+    return max(longueurs) / total <= MAX_WORD_DOMINANCE
 
 
 def read_words(data):

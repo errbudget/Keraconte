@@ -30,9 +30,13 @@ from tests.helpers import (  # noqa: E402
     BWORKNROLL,
     CLIQUETIS,
     ENROLEMENT,
+    AFREUDITE_JEU,
     EXPLORANCIENNE_100,
     FIXTURES,
     HAZEL,
+    HDV_OVERLAY_JEU,
+    HUD_BARRE_SORTS_BRUIT,
+    HUD_BARRE_SORTS_JEU,
     HERCULE,
     HERCULE_PERMUTE,
     IDS,
@@ -453,6 +457,88 @@ def test_garde_l_exclamation_finale():
 def test_la_ponctuation_forte_survit_au_filtre(signe):
     """Elle porte l'intonation : c'est l'objet même de la lecture."""
     assert keep_word(signe, 90) is True
+
+
+@pytest.mark.ocr_fixture
+def test_lit_une_bulle_soudee_au_decor_jusqu_au_bord():
+    """Un décor de même teinte que la bulle ne doit pas rendre le PNJ muet.
+
+    Relevé en jeu chez Affreudite (forge de Brâkmar) : le dialogue n'était
+    JAMAIS lu — pas coupé, pas amputé, muet. Le métal gris de la carte entre
+    dans le masque comme un fond de bulle, la fermeture soude tout jusqu'au
+    bord droit, et le contour géant qui en résulte était écarté EN BLOC avec
+    la bulle dedans. Aucune box ne sortait, l'OCR n'était pas appelé.
+
+    Le blob écarté est désormais re-segmenté sur le masque d'avant fermeture,
+    comme « splits_into_pair » le fait pour une bulle soudée à ses réponses :
+    la bulle redevient un contour propre et l'appariement s'applique. Le bord
+    droit reste éliminatoire pour toute sous-partie qui y touche elle-même —
+    c'est ce qui garde dehors le panneau d'interface latéral.
+    """
+    assert clean(find_dialog(load(AFREUDITE_JEU))) == AFREUDITE_JEU["expected"]
+
+
+@pytest.mark.ocr_fixture
+def test_un_panneau_d_interface_ancre_a_droite_reste_muet():
+    """Le pendant du cas précédent : re-segmenter ne doit pas ouvrir l'interface.
+
+    Relevé en jeu juste après le correctif ci-dessus : l'application disait
+    « ACHAT VENTE » à l'ouverture de l'hôtel de vente. Le panneau forme un
+    blob touchant le bord droit, donc écarté — mais la re-segmentation le
+    découpait en ses composants, et son bandeau d'onglets faisait une paire
+    parfaitement crédible avec le corps du panneau juste dessous.
+
+    Ce qui sépare les deux cas est l'invariant de hauteur des réponses : la
+    bulle d'Affreudite fait 150 px pour 72 px de réponses (0,48), quand le
+    bandeau « ACHAT VENTE » fait 106 px pour 155 px de « réponse » (1,46) —
+    un panneau prend sa liste entière pour bloc de réponses, un dialogue non.
+
+    Une première version séparait les deux cas par la POSITION du blob (un
+    décor soudé traverserait l'écran, un panneau resterait ancré à droite).
+    C'était faux, et la trace en jeu l'a montré : le blob d'Affreudite part
+    de x=0 comme de x=842 selon l'image, et x=842 est justement la position
+    du blob de l'hôtel de vente. La garde refusait 63 % des blobs. Les
+    interfaces du jeu étant de surcroît DÉPLAÇABLES, aucune règle de position
+    ne peut tenir ici.
+    """
+    assert find_dialog(load(HDV_OVERLAY_JEU)) is None
+
+
+@pytest.mark.ocr_fixture
+def test_la_barre_de_sorts_du_jeu_reste_muette():
+    """Hors dialogue, le HUD du bas ne doit rien faire dire à l'application.
+
+    Relevé en jeu sur la carte de Nimotopia, dont le décor est très clair :
+    toute la barre du bas — chat, barre de sorts, minimap, jusqu'à la barre
+    des tâches du bureau — forme un blob sombre unique touchant le bord
+    droit. La re-segmentation en tire la barre de sorts, et la barre d'XP
+    juste dessous lui sert de bloc de réponses.
+
+    Aucune garde géométrique ne peut l'écarter : le ratio de hauteur vaut
+    0,79, en plein dans la plage des vrais dialogues (0,38-0,72 mesurés),
+    et le « , » du mojibake suffit au ratio de ponctuation. Ce qui le trahit
+    est la nature de ce que l'OCR y lit — des icônes agglomérées, pas des
+    mots.
+    """
+    assert find_dialog(load(HUD_BARRE_SORTS_JEU)) is None
+
+
+@pytest.mark.ocr_fixture
+def test_la_barre_de_sorts_reste_muette_meme_lue_en_lettres():
+    """La même barre, dont l'OCR sort cette fois en lettres presque propres.
+
+    Relevé sur une autre carte après le correctif alphabétique : « CPETEUSAUw…e
+    ». Le bruit varie d'une image à l'autre — tantôt des signes (part
+    alphabétique 0,43), tantôt des lettres (0,85) — si bien qu'aucun seuil sur
+    la NATURE des caractères ne peut tenir : à 0,85 ce bloc est plus lisible
+    que CLIQUETIS (0,82), qui est un vrai dialogue.
+
+    Ce qui ne varie pas, c'est la structure. L'OCR d'une grille d'icônes rend
+    un unique agglomérat qui accapare 85 à 92 % du texte, quand un dialogue
+    répartit sur des mots — le plus déséquilibré du registre (CLIQUETIS, quatre
+    onomatopées) plafonne à 0,41.
+    """
+    assert find_dialog(load(HUD_BARRE_SORTS_BRUIT)) is None
 
 
 @pytest.mark.ocr_fixture

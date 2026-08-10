@@ -130,9 +130,13 @@ def test_la_bulle_fermee_coupe_la_dictee():
     images(reader, [None] * 2)
 
     reader.speaker.silence.assert_called_once()
-    # Le texte reste en mémoire : deux images sans lecture ne prouvent pas
-    # que la bulle a été fermée, et l'oublier faisait tout relire au retour.
-    assert reader.last_text == "Bonjour, aventurier."
+    # La mémoire du texte est relâchée : la bulle a quitté l'écran, celle qui
+    # reviendra sera un nouveau geste du joueur et doit pouvoir être relue.
+    # Ce qui protège des relectures en boucle, ce n'est PAS cette mémoire mais
+    # la garde per-boîte (« bubble_still_there ») : tant que la bulle est là,
+    # un OCR qui cligne ne compte pas comme une fermeture — voir
+    # « test_un_ocr_qui_rate_quelques_images_ne_fait_pas_relire ».
+    assert reader.last_text is None
 
 
 def test_un_ocr_qui_rate_quelques_images_ne_fait_pas_relire():
@@ -141,11 +145,19 @@ def test_un_ocr_qui_rate_quelques_images_ne_fait_pas_relire():
     Sur une réplique longue, « find_dialog » échoue par intermittence —
     rafraîchissement, animation. Trois échecs suffisaient à effacer la
     mémoire du texte, et la réplique repartait en lecture au retour.
+
+    La bulle est PRÉSENTE tout du long (« bulle_presente ») : seul l'OCR
+    cligne. C'est ce qui distingue ce cas d'une vraie fermeture, laquelle
+    autorise désormais une relecture (voir « rouvrir_la_fenetre_relit »).
     """
     reader = lecteur_nu()
     texte = "Tu veux savoir pourquoi je rigole ? Donne-moi 5 kamas."
     trou = [None] * 2
-    lus = images(reader, [texte] * 2 + trou + [texte] * 2 + trou + [texte] * 2)
+    lus = images(
+        reader,
+        [texte] * 2 + trou + [texte] * 2 + trou + [texte] * 2,
+        bulle_presente=True,
+    )
     assert lus == [clean(texte)]
 
 
@@ -254,37 +266,44 @@ AFFREUDITE = (
 )
 
 
-def test_un_texte_vu_une_seule_fois_est_lu_avant_d_etre_jete():
-    """Vu en jeu (Affreudite) : le dialogue n'était JAMAIS lu.
+def test_rouvrir_la_fenetre_relit_le_dialogue():
+    """Rouvrir une fenêtre relit sa réplique, même dite à l'instant.
 
-    Sur un fond très contrasté, « find_bubbles » ne dégage la bulle qu'une
-    image sur dix : le texte complet est vu une fois, mis en attente pour
-    confirmation… et la confirmation ne vient jamais. La bulle disparaît, et
-    « pending » était vidé sans avoir jamais été dit.
-
-    Ici le choix n'est plus « lire tôt ou lire juste » mais « lire ou ne rien
-    lire » : à l'instant où l'on jetterait le texte, on le lit.
+    Demande de l'utilisateur, et filet de sécurité : quand la détection rate
+    la première fois (Affreudite, bulle sur fond très contrasté), le dialogue
+    n'est pas perdu — il suffit de rouvrir. Avant, « last_text » survivait à la
+    coupure et le PNJ restait muet pendant tout « repeat_after » (30 s).
     """
     reader = lecteur_nu()
-    lus = images(reader, [AFFREUDITE] + [None] * 2)
+    images(reader, [AFFREUDITE] * 2)  # lu une première fois
+    images(reader, [None] * 2)  # fermeture : la bulle quitte l'écran
+    lus = images(reader, [AFFREUDITE] * 2)  # réouverture immédiate
+    # « images » rend TOUS les énoncés depuis le début : deux lectures du même
+    # texte, une avant fermeture et une après réouverture.
+    assert lus == [clean(AFFREUDITE)] * 2
+
+
+def test_un_dialogue_toujours_affiche_n_est_toujours_pas_relu():
+    """La relecture à la réouverture ne doit pas rouvrir le bug de la boucle.
+
+    Tant que la bulle RESTE à l'écran, l'OCR redonne le même texte à chaque
+    image : c'est ce que « last_text » empêche de relire en boucle. Seule la
+    disparition de la bulle rouvre le droit à la parole.
+    """
+    reader = lecteur_nu()
+    lus = images(reader, [AFFREUDITE] * 6)
     assert lus == [clean(AFFREUDITE)]
 
 
-def test_le_rattrapage_ne_dit_pas_un_texte_manifestement_tronque():
-    """Le rattrapage ne doit pas ressusciter le bug du dialogue amputé.
+def test_un_ocr_qui_cligne_ne_declenche_pas_une_relecture():
+    """Un trou d'OCR bulle présente ne compte pas comme une fermeture.
 
-    Un fragment sans ponctuation finale est une lecture d'OCR en chemin
-    (mémoire « texte-progressif ») : le taire reste le bon choix.
+    Sinon la moindre intermittence de détection (fréquente sur une réplique
+    longue) ferait repartir le dialogue depuis le début.
     """
     reader = lecteur_nu()
-    lus = images(reader, ["Un dresseur a craché le morceau il a indiqué"] + [None] * 2)
-    assert lus == []
-
-
-def test_le_rattrapage_ne_double_pas_un_dialogue_deja_lu():
-    """Le cas normal (deux images concordantes) ne doit pas être relu à la coupure."""
-    reader = lecteur_nu()
-    lus = images(reader, [AFFREUDITE] * 2 + [None] * 2)
+    lus = images(reader, [AFFREUDITE] * 2 + [None] * 6 + [AFFREUDITE] * 2,
+                 bulle_presente=True)
     assert lus == [clean(AFFREUDITE)]
 
 
@@ -327,3 +346,64 @@ def test_en_pause_continue_d_analyser():
         assert lus == ["Nouveau dialogue à l'écran."]
     finally:
         player_state.reprendre()
+
+
+def test_la_relecture_atteint_vraiment_le_moteur():
+    """Le texte relu à la réouverture doit être SYNTHÉTISÉ, pas juste confié.
+
+    Piège vécu, et raison d'être de ce test : un correctif antérieur appelait
+    « say » puis, ligne suivante, « silence() » — qui fait « bump() » ET
+    « _drain() ». La file était vidée avant que le fil de synthèse ait pris
+    l'élément : le log affichait « SAY », le moteur ne recevait rien, et le
+    dialogue restait muet. Tout était vert.
+
+    Les autres tests ne peuvent pas l'attraper : ils doublent le Speaker et
+    vérifient que « say » a été APPELÉ, pas que le texte a survécu jusqu'au
+    moteur. Ici on monte un VRAI Speaker et l'on regarde ce qui arrive au bout.
+    """
+    import time
+
+    from keraconte.speaker import Speaker
+
+    recus = []
+
+    class FauxMoteur:
+        def speak(self, part, narration, generation):
+            recus.append(part)
+
+    reader = lecteur_nu()
+    reader.speaker = Speaker(lambda: FauxMoteur())
+    reader.speaker.start()
+
+    # « images() » inspecte un Speaker doublé : ici il est réel, on pilote donc
+    # « handle » directement. Deux images avec texte, deux sans (fermeture),
+    # deux avec (réouverture).
+    import keraconte.reader as module_reader
+
+    def jouer(sequence):
+        reponses = [
+            (texte, (1, 2, 3, 4)) if texte else (None, None) for texte in sequence
+        ]
+        with mock.patch.object(module_reader, "find_bubbles", lambda f: ([], None)), \
+             mock.patch.object(module_reader, "find_dialog_box", side_effect=reponses), \
+             mock.patch.object(
+                 module_reader, "bubble_still_there", lambda *a, **k: False
+             ):
+            for _ in sequence:
+                reader.handle("frame")
+
+    def attendre(combien):
+        for _ in range(100):
+            if len(recus) >= combien:
+                return
+            time.sleep(0.02)
+
+    jouer([AFFREUDITE] * 2)  # première lecture
+    # On laisse la synthèse dépiler AVANT de fermer : la coupure purge la file,
+    # légitimement (elle sert justement à ne plus rien dire de périmé).
+    attendre(1)
+    jouer([None] * 2)  # fermeture : coupe la voix
+    jouer([AFFREUDITE] * 2)  # réouverture : doit reparler
+    attendre(2)
+
+    assert len(recus) >= 2, f"le moteur n'a reçu que {len(recus)} énoncé(s) : {recus}"

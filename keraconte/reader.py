@@ -8,7 +8,6 @@ module ne tire aucune dépendance système Linux : « import keraconte »
 réussit sans python-gobject ni dbus (Windows/macOS).
 """
 
-import re
 import time
 
 from keraconte.detection import (
@@ -25,10 +24,6 @@ from keraconte.trace import trace as _trace
 
 
 CLOSED_AFTER = 2  # images sans bulle avant de couper la voix
-# Une réplique achevée se termine par une ponctuation forte (« clean » a déjà
-# coupé après la dernière). Un texte qui n'en a pas est une lecture saisie en
-# chemin : c'est le seul garde-fou du rattrapage de « pending ».
-FIN_DE_PHRASE = re.compile(r"[.!?…*][\s»\"']*$")
 
 
 class Reader:
@@ -93,17 +88,21 @@ class Reader:
                 # « find_bubbles » ne dégageait la bulle qu'une image sur dix,
                 # le dialogue entier était vu une fois puis effacé sans avoir
                 # été dit. À cet instant le choix n'est plus « lire tôt ou lire
-                # juste » — le portail à deux images n'a plus rien à arbitrer —
-                # mais « lire ou ne rien lire du tout ».
-                self._dire_le_texte_en_attente()
                 _trace(f">>> SILENCE (bulle absente {CLOSED_AFTER} images) : coupe la voix")
                 self.speaker.silence()
-                # « last_text » survit exprès. Trois images sans bulle ne
-                # prouvent pas que le joueur a fermé quoi que ce soit, et
-                # effacer la mémoire faisait relire le dialogue en entier au
-                # retour — quatre fois pour une réplique un peu longue. C'est
-                # « repeat_after » qui autorise une relecture, pas l'oubli.
                 self.pending = []
+                # La bulle a quitté l'écran : la prochaine qui paraîtra sera un
+                # nouveau geste du joueur, pas la continuation de celle-ci. On
+                # rouvre donc le droit à la parole, même pour le même texte.
+                #
+                # « last_text » ne sert qu'à ne pas relire EN BOUCLE un dialogue
+                # QUI RESTE AFFICHÉ (l'OCR le redonne à chaque image). Une fois
+                # la bulle partie, il n'y a plus de boucle à empêcher, et le
+                # garder rendait le PNJ muet à la réouverture pendant tout
+                # « repeat_after » : le joueur qui rouvre veut manifestement
+                # entendre — c'est aussi le filet quand la détection a raté la
+                # première fois (bulle sur fond très contrasté).
+                self.last_text = None
                 # « last_box », lui, n'a plus lieu d'être : la bulle est bel
                 # et bien partie. Le garder ferait qu'une bulle d'un autre PNJ
                 # tombant à la même place (l'OCR clignant à sa première image)
@@ -148,34 +147,6 @@ class Reader:
             )
             return
         self._dire(clearest(*self.pending), len(self.pending), now)
-
-    def _dire_le_texte_en_attente(self):
-        """Lit le texte en attente au lieu de le jeter, s'il paraît complet.
-
-        Appelé au seul moment où « pending » serait perdu. Un fragment sans
-        ponctuation finale est une lecture d'OCR saisie en chemin (mémoire
-        « texte-progressif ») : le taire reste le bon choix, c'est exactement ce
-        que le portail à deux images protège. Mais un texte qui se termine
-        proprement et qu'aucune image ne viendra plus confirmer doit être dit,
-        sans quoi la réplique est perdue en silence.
-        """
-        if not self.pending:
-            return
-        text = clearest(*self.pending)
-        if not FIN_DE_PHRASE.search(text):
-            _trace(f"pending jeté : texte tronqué ({len(text)} car.)")
-            return
-        # Même garde de relecture que le chemin normal : sans elle, une réplique
-        # déjà dite repartirait en lecture à la fermeture de sa propre bulle.
-        now = time.time()
-        if (
-            self.last_text is not None
-            and same_dialog(text, self.last_text)
-            and now - self.last_seen < self.args.repeat_after
-        ):
-            return
-        _trace(f"RATTRAPAGE : texte vu une seule fois, dit avant d'être jeté")
-        self._dire(text, len(self.pending), now)
 
     def _dire(self, text, images_vues, now):
         """Confie le texte à la synthèse et note qu'il a été lu."""

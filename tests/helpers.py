@@ -194,6 +194,64 @@ ROUKEROL = {
     "dangereux.",
 }
 
+# Relevé en jeu chez Affreudite, forge de Brâkmar — et vidé par « QR_DEBUG »
+# depuis le flux LUI-MÊME, pas fourni à la main. C'est ce qui fait sa valeur :
+# les captures manuelles font 2710 px (barre de titre comprise) et PASSENT,
+# quand le portail livre 2560 px où le défaut se produit. Trois correctifs ont
+# été conçus contre une image qui passait, donc validés sur la mauvaise entrée.
+#
+# Ici le décor gris de la forge entre dans le masque comme un fond de bulle :
+# la fermeture soude tout jusqu'au bord droit et un contour de 2560×773 avale
+# la bulle à 100 %. Écarté en bloc, il ne restait AUCUNE box — d'où « ocr=0ms »
+# dans la trace, l'OCR n'était pas même appelé et le dialogue jamais lu.
+# Le PENDANT du cas Affreudite, vidé du même flux et dans les mêmes
+# dimensions (2560 plein écran) : celui-là ne doit surtout PAS être lu.
+#
+# Relevé en jeu : l'application disait « ACHAT VENTE » à l'ouverture de
+# l'hôtel de vente. Le panneau entier forme un blob qui touche le bord droit,
+# donc écarté — jusqu'à ce que la re-segmentation d'AFREUDITE_JEU le découpe
+# en ses composants, où le bandeau d'onglets et le corps du panneau juste
+# dessous formaient une paire parfaitement crédible.
+#
+# La paire des deux fixtures est le vrai garde-fou : un même mécanisme doit
+# rendre l'une lisible et laisser l'autre muette.
+HDV_OVERLAY_JEU = {"file": "hud/hdv_overlay_item_jeu.png"}
+
+# Relevé en jeu, carte de Nimotopia : hors de tout dialogue, l'application
+# disait « EUSAUVS È©£@@@@@Që@@@ä@,V » en boucle. Le décor y est très clair,
+# si bien que toute la barre du bas — chat, barre de sorts, minimap, et
+# jusqu'à la barre des tâches du bureau — forme un blob sombre unique qui
+# touche le bord droit. La re-segmentation en tire la barre de sorts, et la
+# barre d'XP juste dessous lui sert de bloc de réponses : la paire est
+# géométriquement parfaite (ratio de hauteur 0,79, en plein dans la plage
+# d'un vrai dialogue), et le « , » du mojibake suffit au ratio de
+# ponctuation.
+#
+# Ce que l'OCR rend là n'est pas du texte mais des icônes agglomérées : la
+# part de caractères alphabétiques tombe à 0,43-0,50, quand le dialogue le
+# plus bruité du registre (CLIQUETIS, que des onomatopées) tient 0,82.
+HUD_BARRE_SORTS_JEU = {"file": "dialogues/interface_barre_sorts_jeu.png"}
+
+# La MÊME barre de sorts, relevée sur une autre carte (décor bleu) après le
+# correctif alphabétique : « CPETEUSAUw…e ». Le bruit d'OCR varie d'une image
+# à l'autre — tantôt des signes (« È©£@@@@ », part alphabétique 0,43), tantôt
+# des lettres presque propres (0,85). Le seuil alphabétique ne peut donc pas
+# le prendre : à 0,85 ce bloc est plus « lisible » que CLIQUETIS (0,82), un
+# vrai dialogue.
+#
+# Ce qui ne varie PAS, c'est la structure : un unique agglomérat qui accapare
+# 85 à 92 % du texte lu, là où le dialogue le plus déséquilibré du registre
+# (CLIQUETIS, quatre onomatopées) plafonne à 0,41.
+HUD_BARRE_SORTS_BRUIT = {"file": "dialogues/interface_barre_sorts_bruit.png"}
+
+AFREUDITE_JEU = {
+    "file": "dialogues/dialogue_afreudite_jeu.png",
+    "expected": "Je ne trouve pas de bijou digne de ma beauté. Ici, il y a "
+    "plein de pierres précieuses arrachées aux entrailles de la terre, mais "
+    "moi ce qui me plairait, ce serait un bijou en nacre serti de perles "
+    "parfaites.",
+}
+
 
 # Dialogue très court, apparié à ses réponses. « expected » reprend ce que
 # l'OCR rend vraiment (« toâ » ressort « toû. »), non le texte à l'écran.
