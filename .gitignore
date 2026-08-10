@@ -21,3 +21,11 @@ dist/
 # (déposées pour mesure, chat non masqué) ne sont simplement pas ajoutées.
 tests/fixtures/hud/
 tests/fixtures/combats/
+
+# Artefacts locaux de la précompilation audio (ADR-0004). JAMAIS versionnés :
+# l'échantillon porte les TEXTES EN CLAIR du jeu et le pack en porte l'audio,
+# c'est-à-dire du contenu dérivé d'Ankama — le dépôt ne contient que les
+# générateurs (outils/), leur sortie est un geste local du mainteneur.
+echantillon-repliques.json
+pack-audio/
+releve-banc*.json
