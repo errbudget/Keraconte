@@ -40,13 +40,30 @@ n'inventorie que le travail à faire, sans charger le modèle ni synthétiser.
 """
 
 import argparse
+import contextlib
 import datetime
 import json
 import os
 import sys
+import tempfile
 import time
+import types
 import wave
 import zlib
+
+# Le découpage en phrases doit être EXACTEMENT celui du runtime : le pack
+# précompile ce que le moteur aurait produit en direct, sinon le repli
+# « pack absent » ne sonne pas comme le pack. On importe donc le vrai
+# « keraconte.text » — mais via un paquet SQUELETTE, comme le fait déjà
+# « generer_table_genre.py » : l'__init__ du paquet tire cv2/PySide6, dont
+# cet outil n'a que faire (et qui manquent dans le venv XTTS).
+_RACINE = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+if "keraconte" not in sys.modules:
+    _squelette = types.ModuleType("keraconte")
+    _squelette.__path__ = [os.path.join(_RACINE, "keraconte")]
+    sys.modules["keraconte"] = _squelette
+
+from keraconte.text import pronounce, speakable, split_sentences  # noqa: E402
 
 # Canaux de l'ADR-0001. Le pack déclare la voix employée PAR CANAL : une
 # installation qui complète le pack doit pouvoir utiliser exactement les
@@ -140,10 +157,65 @@ def _charger_moteur():
 
 
 def _duree_wav(chemin):
-    import contextlib
-
     with contextlib.closing(wave.open(chemin, "rb")) as fichier:
         return fichier.getnframes() / float(fichier.getframerate())
+
+
+def phrases_a_dire(texte):
+    """Les segments que le runtime synthétiserait, dans le même ordre.
+
+    Même chaîne que « XttsEngine.speak » : « pronounce » puis découpe, et on
+    écarte les segments sans phonème — sans ce filtre le moteur concatène une
+    liste vide et lève (bug déjà rencontré sur Kokoro).
+    """
+    return [
+        phrase
+        for phrase in split_sentences(pronounce(texte))
+        if speakable(phrase)
+    ]
+
+
+def synthetiser(moteur, texte, voix, chemin):
+    """Synthétise une réplique entière en UN wav, phrase par phrase.
+
+    Le découpage n'est pas une optimisation de latence ici (rien ne presse
+    hors ligne) : c'est la fidélité au runtime. XTTS avertit au-delà de 273
+    caractères en français — « this might cause truncated audio » — et le p90
+    du corpus est à 409. Le moteur du dépôt ne rencontre jamais cette limite
+    parce qu'il découpe ; le pack doit faire pareil, sinon il précompile un
+    audio que le direct n'aurait pas produit.
+
+    Mesuré au banc du 2026-08-10 : sans découpage, le débit de parole MONTE
+    avec la longueur (12,0 car/s sous 80 caractères, 16,9 au-dessus de 450)
+    — donc rien n'était tronqué sur cet échantillon. L'avertissement est
+    conservateur, mais on ne parie pas là-dessus sur 55 037 répliques.
+    """
+    phrases = phrases_a_dire(texte)
+    if not phrases:
+        raise ValueError("aucune phrase prononçable")
+
+    dossier = tempfile.mkdtemp(prefix="pack-phrase-")
+    morceaux = []
+    try:
+        for rang, phrase in enumerate(phrases):
+            bout = os.path.join(dossier, f"{rang}.wav")
+            moteur.tts_to_file(
+                text=phrase, language="fr", speaker=voix, file_path=bout
+            )
+            morceaux.append(bout)
+        with wave.open(morceaux[0], "rb") as premier:
+            parametres = premier.getparams()
+        with wave.open(chemin, "wb") as sortie:
+            sortie.setparams(parametres)
+            for bout in morceaux:
+                with wave.open(bout, "rb") as entree:
+                    sortie.writeframes(entree.readframes(entree.getnframes()))
+    finally:
+        for bout in morceaux:
+            with contextlib.suppress(OSError):
+                os.unlink(bout)
+        with contextlib.suppress(OSError):
+            os.rmdir(dossier)
 
 
 def main():
@@ -197,9 +269,7 @@ def main():
         nom = f"{replique['id']}-{args.canal}.wav"
         chemin = os.path.join(args.pack, "audio", nom)
         try:
-            moteur.tts_to_file(
-                text=replique["texte"], language="fr", speaker=voix, file_path=chemin
-            )
+            synthetiser(moteur, replique["texte"], voix, chemin)
         except Exception as erreur:  # noqa: BLE001 — un échec ne tue pas la passe
             print(f"  id {replique['id']} : {erreur}", file=sys.stderr)
             echecs += 1

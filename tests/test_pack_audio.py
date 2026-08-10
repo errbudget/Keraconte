@@ -220,6 +220,43 @@ def test_ecriture_du_manifeste_est_atomique(tmp_path):
     assert not list(tmp_path.glob("*.tmp"))
 
 
+# --- Fidélité au runtime -----------------------------------------------------
+
+
+def test_le_decoupage_est_celui_du_runtime():
+    """Le pack doit précompiler CE QUE LE DIRECT AURAIT DIT, phrase à phrase.
+
+    XTTS avertit au-delà de 273 caractères en français (« this might cause
+    truncated audio »), relevé au banc du 2026-08-10 ; le moteur du dépôt ne
+    rencontre jamais la limite parce qu'il découpe. Si le pack synthétisait
+    le bloc entier, il produirait un audio que le direct n'aurait pas rendu —
+    et le repli « pack absent » ne sonnerait plus pareil.
+    """
+    from keraconte.text import pronounce, speakable, split_sentences
+
+    texte = "Bonjour, aventurier. Va voir le forgeron ! Il t'attend."
+    attendu = [
+        phrase for phrase in split_sentences(pronounce(texte)) if speakable(phrase)
+    ]
+    assert pack_audio.phrases_a_dire(texte) == attendu
+    assert len(attendu) == 3
+
+
+def test_les_segments_sans_phoneme_sont_ecartes():
+    """Un segment vide fait LEVER les moteurs (bug déjà connu sur Kokoro)."""
+    assert pack_audio.phrases_a_dire("...") == []
+    assert pack_audio.phrases_a_dire("") == []
+
+
+def test_une_replique_longue_est_decoupee_sous_la_limite_xtts():
+    """Le p90 du corpus (409 car.) dépasse la limite : c'est le cas courant."""
+    texte = " ".join(f"Voici la phrase numéro {n} de ce dialogue." for n in range(12))
+    assert len(texte) > 273
+    phrases = pack_audio.phrases_a_dire(texte)
+    assert len(phrases) == 12
+    assert all(len(phrase) <= 273 for phrase in phrases)
+
+
 def test_le_pack_declare_une_voix_par_canal():
     """ADR-0004 §4 : un canal rend un seul timbre, déclaré au manifeste.
 
